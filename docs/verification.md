@@ -10,7 +10,7 @@
 pwsh -NoProfile -ExecutionPolicy Bypass -File tests\run-tests.ps1
 ```
 
-结果：`ALL PASS (30 checks)`。
+结果：`ALL PASS (31 checks)`。
 
 覆盖：
 
@@ -18,7 +18,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File tests\run-tests.ps1
 - `Internal Error` 文案识别
 - 带 owner 的 WinForms 模态框（非 `#32770`）
 - 原生 `LVDChild` 窗口、无子按钮、只能按 Enter 关闭（模拟 LabVIEW `One Button Dialog`，测试配置显式开启键盘兜底）
-- 危险标题（“保存更改”）不被点击
+- 危险标题（“保存更改”）不被点击；默认配置下无按钮自绘框不被处理
 - `--dry-run` 不点击
 - 非目标进程不处理
 - 配置解析、按钮精确匹配、internal error 识别等单元测试
@@ -145,3 +145,4 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File tests\run-tests.ps1
 - 轮询延迟约一个扫描周期。
 
 原始日志保留在本机 `%LOCALAPPDATA%\Programs\LabVIEWDialogWatchdog\logs\`，不随仓库提交。
+

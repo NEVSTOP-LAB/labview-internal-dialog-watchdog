@@ -101,6 +101,12 @@ namespace LabVIEWDialogWatchdog
             "内部错误", "内部警告", "unexpected error"
         };
 
+        private static readonly string[] DangerousButtonWords =
+        {
+            "保存", "不保存", "覆盖", "删除", "重命名",
+            "Save", "Overwrite", "Delete", "Rename"
+        };
+
         private static readonly HashSet<string> IgnoredClasses = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "tooltips_class32", "#32768", "ComboLBox", "SysShadow", "IME", "MSCTFIME UI",
@@ -373,9 +379,9 @@ namespace LabVIEWDialogWatchdog
                 }
 
                 int score = ScoreButton(text, settings.confirmButtonTexts);
-                if (score <= 0 && id == Native.IDOK)
+                if (score <= 0 && id == Native.IDOK && !ContainsAny(text, DangerousButtonWords))
                 {
-                    // IDOK 本身就是确认语义，即使文本是本地化/自绘的。
+                    // IDOK 本身是确认语义；但“关闭而不保存”这类危险文本即使挂 IDOK 也不点。
                     score = 100;
                 }
                 if (score <= 0)
@@ -506,6 +512,11 @@ namespace LabVIEWDialogWatchdog
         internal static bool HasInternalErrorText(string text)
         {
             return ContainsAny(text ?? string.Empty, InternalErrorMarkers);
+        }
+
+        internal static bool IsDangerousButtonText(string text)
+        {
+            return ContainsAny(text ?? string.Empty, DangerousButtonWords);
         }
     }
 }

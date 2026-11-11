@@ -190,6 +190,34 @@ try {
     }
 }
 
+Write-Host '== 安全用例：默认配置不处理无按钮自绘框 =='
+$defaultSafeConfig = Join-Path $TempDir 'config-default-safe.json'
+$defaultSafeLog = Join-Path $TempDir 'logs-default-safe'
+$defaultSafeMarker = Join-Path $TempDir 'closed-default-safe.txt'
+New-Item -ItemType Directory -Force -Path $defaultSafeLog | Out-Null
+Remove-Item -LiteralPath $defaultSafeMarker -Force -ErrorAction SilentlyContinue
+@{
+    targetProcessNames = @('LabVIEWDialogFixture')
+    logDirectory       = $defaultSafeLog
+    pollIntervalMs     = 200
+    minSeenCount       = 1
+    showNotifications  = $false
+} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $defaultSafeConfig -Encoding utf8
+$defaultSafeProcess = Start-Quoted -FilePath $fixture -Arguments @('--labview-custom', $defaultSafeMarker) `
+    -RedirectOut (Join-Path $TempDir 'fixture-default-safe.out') -RedirectErr (Join-Path $TempDir 'fixture-default-safe.err')
+try {
+    Start-Sleep -Milliseconds 1200
+    $defaultSafeOut = Join-Path $TempDir 'scan-default-safe.json'
+    $null = Invoke-WatchdogCli -Arguments @('--scan', '--json', '--config', $defaultSafeConfig, '--out', $defaultSafeOut) -Tag 'scan-default-safe'
+    $defaultSafeText = Get-Content -LiteralPath $defaultSafeOut -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
+    $defaultSafeItems = @($defaultSafeText | ConvertFrom-Json)
+    Assert-Verdict '默认配置：无按钮自绘框不被识别' ($defaultSafeItems.Count -eq 0) $defaultSafeText
+} finally {
+    if (-not $defaultSafeProcess.HasExited) {
+        Stop-Process -Id $defaultSafeProcess.Id -Force -ErrorAction SilentlyContinue
+    }
+}
+
 Write-Host '== 安全用例：--dry-run 不点击 =='
 $dryConfig = Join-Path $TempDir 'config-dryrun.json'
 $dryLog = Join-Path $TempDir 'logs-dryrun'

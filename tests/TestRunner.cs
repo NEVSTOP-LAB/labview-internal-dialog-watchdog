@@ -17,6 +17,12 @@ namespace LabVIEWDialogWatchdog.Tests
             string normalizeWarning;
             defaults.Normalize(out normalizeWarning);
 
+            Check("默认关闭键盘兜底", !defaults.enableKeyboardFallback);
+            Check("默认关闭 WM_CLOSE", !defaults.enableWindowCloseFallback);
+            Check("默认 minSeenCount=2", defaults.minSeenCount == 2);
+            Check("默认排除保存类标题", IsSaveTitleExcluded(defaults));
+            Check("危险按钮文本可识别", WindowScanner.IsDangerousButtonText("关闭而不保存"));
+
             Check("默认确认文本包含 确定", WindowScanner.IsConfirmText("确定", defaults.confirmButtonTexts));
             Check("默认确认文本包含 OK", WindowScanner.IsConfirmText("OK", defaults.confirmButtonTexts));
             Check("Continue 视为确认", WindowScanner.IsConfirmText("Continue", defaults.confirmButtonTexts));

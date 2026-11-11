@@ -95,7 +95,6 @@ namespace LabVIEWDialogWatchdog
                 {
                     continue;
                 }
-
                 state.Seen++;
                 if (state.Seen < _settings.minSeenCount || now < state.NextAttemptUtc)
                 {
@@ -171,11 +170,6 @@ namespace LabVIEWDialogWatchdog
             {
                 IntPtr handle = pair.Key;
                 DialogState state = pair.Value;
-                if (state.Completed)
-                {
-                    _states.Remove(handle);
-                    continue;
-                }
 
                 if (!Native.IsWindow(handle))
                 {

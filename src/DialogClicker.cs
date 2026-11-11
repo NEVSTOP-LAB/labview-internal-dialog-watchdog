@@ -48,11 +48,16 @@ namespace LabVIEWDialogWatchdog
                 return sent != IntPtr.Zero;
             }
 
-            // 兜底：向对话框发 IDOK 命令并回车触发默认按钮。
-            bool commandPosted = Native.PostMessage(dialog.Handle, Native.WM_COMMAND, (IntPtr)Native.IDOK, button);
-            bool keyPosted = Native.PostMessage(dialog.Handle, Native.WM_KEYDOWN, (IntPtr)Native.VK_RETURN, IntPtr.Zero);
-            Native.PostMessage(dialog.Handle, Native.WM_KEYUP, (IntPtr)Native.VK_RETURN, IntPtr.Zero);
-            method = "WM_COMMAND(IDOK)+Enter";
+            // 兜底：向对话框发匹配按钮的 ID（没有 ID 时退回 IDOK），再回车触发默认按钮。
+            IntPtr commandId = dialog.ButtonId > 0 ? (IntPtr)dialog.ButtonId : (IntPtr)Native.IDOK;
+            bool commandPosted = Native.PostMessage(dialog.Handle, Native.WM_COMMAND, commandId, button);
+            bool keyPosted = false;
+            if (dialog.ButtonId == 0 || dialog.ButtonId == Native.IDOK)
+            {
+                keyPosted = Native.PostMessage(dialog.Handle, Native.WM_KEYDOWN, (IntPtr)Native.VK_RETURN, IntPtr.Zero);
+                Native.PostMessage(dialog.Handle, Native.WM_KEYUP, (IntPtr)Native.VK_RETURN, IntPtr.Zero);
+            }
+            method = "WM_COMMAND(" + commandId + ")+Enter";
             return commandPosted || keyPosted;
         }
 

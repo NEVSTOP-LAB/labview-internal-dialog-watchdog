@@ -36,10 +36,11 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File tests\run-tests.ps1
 | 2 | `Internal Warning 0x0E2E7DCF : "image.cpp", line 14786` | `#32770` | 确定 |
 | 2 | `Internal Warning 0x802D6264 : "image.cpp", line 5378` | `#32770` | 确定 |
 
-典型日志（检测到关闭约 0.3–0.6 秒）：
+典型日志（检测到关闭约 0.3–0.6 秒；这批日志产生于“internal warning”标记加入前，
+因此 `internalError=False`；新版本会把 `Internal Warning` 标为 `True`）：
 
 ```text
-2026-11-12 00:44:14.004 [I] 检测到阻塞对话框：pid=13060 process=LabVIEW class=#32770 title='错误' button='确定' source=native internalError=True text='错误 | error 8 creating temporary LVSB resource file |'
+2026-11-12 00:44:14.004 [I] 检测到阻塞对话框：pid=13060 process=LabVIEW class=#32770 title='错误' button='确定' source=native internalError=False text='错误 | error 8 creating temporary LVSB resource file |'
 2026-11-12 00:44:14.005 [I] 第 1 次点击（BM_CLICK(post)）：...
 2026-11-12 00:44:14.602 [I] 对话框已关闭：...
 ```

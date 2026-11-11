@@ -66,6 +66,26 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File tests\run-tests.ps1
 这些对话框弹出时 LabVIEW 主窗口 `LVFrame` 被禁用（模态状态），关闭后恢复可用；
 这正是 labview-mcp 调用被卡住的直接原因。
 
+## 2.1 收紧默认策略后的真实回归
+
+2026-11-12 01:19 用 review 后的新版本（键盘兜底/WM_CLOSE 默认关闭、危险标题排除、
+标准框只处理 owner 禁用/错误语义/单按钮）重启 LabVIEW，日志记录 **6 个真实对话框全部自动关闭**：
+
+| 次数 | 对话框文本 | 命中规则 |
+|---|---|---|
+| 1 | `error 8 creating temporary LVSB resource file` | 标准 `#32770` + 单按钮“确定” |
+| 5 | `Internal Warning`（`ConfigManager.cpp`、`image.cpp`、`LVFPGATarget.cpp`） | 标准 `#32770` + 错误语义，`internalError=True` |
+
+示例：
+
+```text
+2026-11-12 01:19:30.159 [I] 检测到阻塞对话框：pid=28864 process=LabVIEW class=#32770 title='错误' button='确定' source=native internalError=True ownerDisabled=False text='错误 | Internal Warning 0x200F30E9 :  "ConfigManager.cpp", line 579 ...'
+2026-11-12 01:19:30.473 [I] 第 1 次点击（BM_CLICK(post)）：...
+2026-11-12 01:19:31.101 [I] 对话框已关闭：...
+```
+
+说明收紧后的条件没有误伤真实内部告警；`error 8` 框走单按钮规则、`Internal Warning` 走错误语义规则。
+
 ## 3. MCP 被阻塞 → 解除阻塞
 
 - 2026-11-11 23:48：`lvai_validate_aixml backend="grpc"` 触发真实 `#32770` 内部告警

@@ -44,6 +44,19 @@ namespace LabVIEWDialogWatchdog.Tests
             Check("坏配置回退默认值", broken.pollIntervalMs == 500);
             Check("坏配置给出警告", !string.IsNullOrEmpty(warning));
 
+            string defaultPath = Path.Combine(tempDir, "default-config.json");
+            File.WriteAllText(defaultPath, WatchdogSettings.DefaultJson());
+            WatchdogSettings defaultConfig = WatchdogSettings.Load(defaultPath, out warning);
+            Check("默认配置可被解析", string.IsNullOrEmpty(warning));
+            Check("默认配置保留键盘兜底", defaultConfig.keyboardFallbackWindowClasses[0] == "LVDChild");
+            Check("默认配置延迟正确", defaultConfig.keyboardFallbackDelayMs == 800);
+
+            string commentedPath = Path.Combine(tempDir, "commented-config.json");
+            File.WriteAllText(commentedPath,
+                "{\n  // 手工注释\n  \"pollIntervalMs\": 700\n}");
+            WatchdogSettings commented = WatchdogSettings.Load(commentedPath, out warning);
+            Check("整行注释被容忍", string.IsNullOrEmpty(warning) && commented.pollIntervalMs == 700);
+
             Console.WriteLine(_failures == 0 ? "UNIT PASS" : "UNIT FAIL " + _failures);
             return _failures == 0 ? 0 : 1;
         }

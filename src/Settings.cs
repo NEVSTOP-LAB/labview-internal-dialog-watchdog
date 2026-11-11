@@ -71,7 +71,7 @@ namespace LabVIEWDialogWatchdog
 
             try
             {
-                string json = File.ReadAllText(path);
+                string json = StripLineComments(File.ReadAllText(path));
                 var serializer = new JavaScriptSerializer();
                 var settings = serializer.Deserialize<WatchdogSettings>(json) ?? new WatchdogSettings();
                 settings.Normalize(out warning);
@@ -124,41 +124,48 @@ namespace LabVIEWDialogWatchdog
             return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, logDirectory);
         }
 
-        /// <summary>写出一份带注释（README 说明）的默认配置文本。</summary>
+        /// <summary>忽略整行 // 注释，兼容用户手工编辑的配置。</summary>
+        private static string StripLineComments(string json)
+        {
+            if (string.IsNullOrEmpty(json) || json.IndexOf("//", StringComparison.Ordinal) < 0)
+            {
+                return json;
+            }
+            var builder = new System.Text.StringBuilder();
+            foreach (string line in json.Replace("\r\n", "\n").Split('\n'))
+            {
+                string trimmed = line.TrimStart();
+                if (trimmed.StartsWith("//", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+                builder.Append(line).Append('\n');
+            }
+            return builder.ToString();
+        }
+
+        /// <summary>写出可被本程序直接读取的默认配置。</summary>
         public static string DefaultJson()
         {
             return
 @"{
-  // 要监控的进程名（不含 .exe）。默认 LabVIEW。
   ""targetProcessNames"": [""LabVIEW""],
-  // 额外当作对话框的窗口类名；#32770 永远按标准对话框处理。
   ""dialogWindowClasses"": [],
-  // 视为“确认/继续”的按钮文本。
   ""confirmButtonTexts"": [""OK"", ""确定"", ""Continue"", ""继续"", ""Close"", ""关闭""],
-  // 永不点击的按钮文本。
   ""excludeButtonTexts"": [""Cancel"", ""取消"", ""Stop"", ""停止"", ""Abort"", ""放弃"", ""No"", ""否""],
-  // 标题命中这些片段的对话框不处理（例如保存/覆盖提示）。
   ""excludeDialogTitlePatterns"": [],
-  // 没有原生按钮时可按 Enter 兜底的窗口类（LabVIEW 自绘对话框）。
   ""keyboardFallbackWindowClasses"": [""LVDChild""],
-  // 首次按 Enter 前的等待（毫秒）。
   ""keyboardFallbackDelayMs"": 800,
   ""enableKeyboardFallback"": true,
-  // 扫描间隔（毫秒）。
   ""pollIntervalMs"": 500,
-  // 同一对话框至少连续出现多少次才点击。
   ""minSeenCount"": 1,
-  // 同一对话框最多尝试点击次数。
   ""maxClickAttempts"": 3,
-  // 两次点击尝试之间的等待（毫秒）。
   ""clickRetryDelayMs"": 900,
   ""startPaused"": false,
   ""showNotifications"": true,
-  // true 时只记录、不点击。
   ""dryRun"": false,
   ""logDirectory"": ""logs""
-}
-";
+}";
         }
     }
 }

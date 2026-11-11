@@ -56,7 +56,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File install.ps1 -InstallDir "$env:LOCA
 
 ## 配置
 
-默认读取 exe 同目录的 `LabVIEWDialogWatchdog.json`（可用 `--config` 指定）。文件不存在时使用默认值；托盘菜单“打开配置文件”会生成一份带注释的默认配置。
+默认读取 exe 同目录的 `LabVIEWDialogWatchdog.json`（可用 `--config` 指定）。文件不存在时使用默认值；托盘菜单“打开配置文件”会生成一份可直接读取的默认配置（加载时也容忍整行 `//` 注释）。
 
 | 字段 | 默认值 | 说明 |
 |---|---|---|

@@ -48,6 +48,21 @@ namespace LabVIEWDialogWatchdog
 
                 string name = Resolve(processId);
                 Cache[processId] = new Entry { Name = name, ExpiresUtc = now.AddSeconds(10) };
+                if (Cache.Count > 256)
+                {
+                    var expired = new List<uint>();
+                    foreach (KeyValuePair<uint, Entry> pair in Cache)
+                    {
+                        if (pair.Value.ExpiresUtc <= now)
+                        {
+                            expired.Add(pair.Key);
+                        }
+                    }
+                    foreach (uint key in expired)
+                    {
+                        Cache.Remove(key);
+                    }
+                }
                 return name;
             }
         }
@@ -171,6 +186,17 @@ namespace LabVIEWDialogWatchdog
                 bool internalError = ContainsAny(text + " " + title, InternalErrorMarkers);
 
                 ButtonChoice native = FindNativeConfirmButton(hWnd, settings);
+
+                // 标准对话框不是天然模态：只有 owner 被禁用、带错误语义，或“只有一个按钮”
+                // 才按阻塞框处理；避免把普通属性/选择框里的 OK 误当成错误确认。
+                if (standard && !ownerDisabled && !internalError)
+                {
+                    if (native == null || CountVisibleButtons(hWnd) != 1)
+                    {
+                        return true;
+                    }
+                }
+
                 ButtonChoice button = native;
                 string source = "native";
                 if (button == null)
@@ -214,8 +240,33 @@ namespace LabVIEWDialogWatchdog
 
         private static bool IsOnScreen(Native.RECT rect)
         {
-            return rect.Left > -10000 && rect.Top > -10000 &&
-                   rect.Right > rect.Left && rect.Bottom > rect.Top;
+            int left = Native.GetSystemMetrics(Native.SM_XVIRTUALSCREEN);
+            int top = Native.GetSystemMetrics(Native.SM_YVIRTUALSCREEN);
+            int width = Native.GetSystemMetrics(Native.SM_CXVIRTUALSCREEN);
+            int height = Native.GetSystemMetrics(Native.SM_CYVIRTUALSCREEN);
+            int right = left + width;
+            int bottom = top + height;
+            return rect.Right > left && rect.Left < right && rect.Bottom > top && rect.Top < bottom;
+        }
+
+        private static int CountVisibleButtons(IntPtr dialog)
+        {
+            int count = 0;
+            Native.EnumChildWindows(dialog, delegate(IntPtr child, IntPtr lParam)
+            {
+                if (!Native.IsWindowVisible(child) || !Native.IsWindowEnabled(child))
+                {
+                    return true;
+                }
+                string className = Native.GetClassNameSafe(child);
+                if (string.Equals(className, "Button", StringComparison.OrdinalIgnoreCase) ||
+                    className.IndexOf("button", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    count++;
+                }
+                return true;
+            }, IntPtr.Zero);
+            return count;
         }
 
         private static bool IsTarget(string processName, string className, string title, HashSet<string> targets)
@@ -322,6 +373,11 @@ namespace LabVIEWDialogWatchdog
                 }
 
                 int score = ScoreButton(text, settings.confirmButtonTexts);
+                if (score <= 0 && id == Native.IDOK)
+                {
+                    // IDOK 本身就是确认语义，即使文本是本地化/自绘的。
+                    score = 100;
+                }
                 if (score <= 0)
                 {
                     return true;
@@ -387,17 +443,10 @@ namespace LabVIEWDialogWatchdog
                     continue;
                 }
                 string candidate = NormalizeButtonText(confirm);
+                // 只做精确匹配：避免“关闭而不保存/Close without saving”命中“关闭/Close”。
                 if (text.Equals(candidate, StringComparison.OrdinalIgnoreCase))
                 {
                     best = Math.Max(best, 500);
-                }
-                else if (text.StartsWith(candidate, StringComparison.OrdinalIgnoreCase))
-                {
-                    best = Math.Max(best, 300);
-                }
-                else if (text.IndexOf(candidate, StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    best = Math.Max(best, 100);
                 }
             }
             return best;

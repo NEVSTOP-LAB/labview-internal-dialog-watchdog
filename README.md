@@ -6,8 +6,9 @@ Windows 托盘守护进程：检测 LabVIEW 被模态对话框卡住的情况，
 
 - 常驻系统托盘，无主窗口
 - 单文件 exe（约 40 KB），只依赖 Windows 自带的 .NET Framework 4.8
-- 默认每 300–500 ms 扫描一次，静止时 CPU 接近 0
+- 默认每 500 ms 扫描一次，静止时 CPU 接近 0
 - 只处理指定进程（默认 `LabVIEW`）的可见模态对话框，默认只点“确定/OK/继续/关闭”
+- 默认安全策略：危险标题（保存/覆盖/删除/重命名等）不处理；无按钮自绘框的 Enter 兜底与 `WM_CLOSE` 兜底都需要显式开启
 - 每处理一个对话框写一条日志，可在托盘菜单打开
 
 ## 工作原理
@@ -17,10 +18,11 @@ Windows 托盘守护进程：检测 LabVIEW 被模态对话框卡住的情况，
    - 标准 Win32 对话框（窗口类 `#32770`）；
    - 被已禁用的主窗口拥有的对话框（owner 被禁用，带 `WS_DLGFRAME`）；
    - 配置中额外声明的窗口类。
-3. 在对话框内查找文本匹配“确认”的原生按钮；找不到时：
-   - 对 LabVIEW 自绘窗口（默认 `LVDChild`，如 `One Button Dialog`）先激活窗口再发 Enter，然后才退到 `WM_COMMAND(IDOK)+Enter`、`WM_CLOSE`；
+3. 在对话框内查找文本**精确匹配**“确认”的原生按钮（IDOK 例外）；找不到时：
+   - 仅在显式开启 `enableKeyboardFallback` 后，对 LabVIEW 自绘窗口（默认 `LVDChild`，如 `One Button Dialog`）
+     先激活窗口再发 Enter，然后才发 `WM_COMMAND(IDOK)+Enter`；
    - 对其他应用先尝试 UI Automation 的 Invoke。
-4. 点击后确认窗口消失，记录日志并弹托盘气泡（可关闭）。
+4. 点击后确认窗口消失，记录日志并弹托盘气泡（可关闭）。扫描与点击在线程池执行，不阻塞托盘 UI。
 5. 真正的“点击”在轮询线程上完成，不阻塞托盘；连续失败达到上限后停在日志里，不会无限点。
 
 ## 构建
@@ -64,18 +66,26 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File install.ps1 -InstallDir "$env:LOCA
 | `dialogWindowClasses` | `[]` | 额外当作对话框的窗口类 |
 | `confirmButtonTexts` | `OK/确定/Continue/继续/Close/关闭` | 视为确认的按钮文本 |
 | `excludeButtonTexts` | `Cancel/取消/Stop/停止/Abort/放弃/No/否` | 永不点击的按钮 |
-| `excludeDialogTitlePatterns` | `[]` | 标题命中片段的对话框不处理 |
+| `excludeDialogTitlePatterns` | 保存/覆盖/删除/重命名/退出/停止 + 英文 | 标题命中片段的对话框不处理 |
 | `keyboardFallbackWindowClasses` | `["LVDChild"]` | 没有原生按钮时可按 Enter 的窗口类 |
 | `keyboardFallbackDelayMs` | `800` | 首次按 Enter 前的等待，避免误触瞬时进度框 |
-| `enableKeyboardFallback` | `true` | 是否启用无按钮时的键盘兜底 |
+| `enableKeyboardFallback` | `false` | 是否启用无按钮时的键盘兜底（默认关闭） |
+| `enableWindowCloseFallback` | `false` | 是否允许 `WM_CLOSE` 最后兜底（默认关闭；强关可能破坏调用方） |
 | `pollIntervalMs` | `500` | 扫描间隔（100–5000） |
-| `minSeenCount` | `1` | 连续看到多少次才点击 |
+| `minSeenCount` | `2` | 连续看到多少次才点击 |
 | `maxClickAttempts` | `3` | 单个对话框最多尝试次数 |
 | `clickRetryDelayMs` | `900` | 两次尝试之间的等待 |
 | `startPaused` | `false` | 启动即暂停 |
 | `showNotifications` | `true` | 点击成功后弹托盘气泡 |
 | `dryRun` | `false` | 只记录不点击 |
 | `logDirectory` | `logs` | 日志目录（相对 exe 或绝对路径） |
+
+> [!WARNING]
+> 默认只自动确认：带错误语义、模态且 owner 被禁用、或只有一个按钮的标准 `#32770`。
+> 普通多按钮的 OK/确定框默认不处理。LabVIEW 自绘无按钮对话框（如 `One Button Dialog`）
+> 的 Enter 兜底默认关闭；需要时在配置里把 `enableKeyboardFallback` 设为 `true`，
+> 并确认 `excludeDialogTitlePatterns` 覆盖了业务上危险的标题。
+> `WM_CLOSE` 默认关闭：真实测试中强关 LabVIEW 自绘框曾导致其 AI gRPC 服务卡死。
 
 ## 命令行
 
@@ -95,6 +105,10 @@ LabVIEWDialogWatchdog.exe                 # 托盘常驻
 `--scan --json` 的每一项包含：窗口句柄、PID、进程名、窗口类、标题、文本、按钮文本、
 按钮 ID、`buttonSource`（`native`/`keyboard`）、`internalError`、`standardDialog`、`ownerDisabled`。
 
+> [!NOTE]
+> exe 是 GUI 子系统，在部分终端/重定向环境下 `--scan` 的 stdout 不可靠；
+> 自动化与排障请用 `--out <path>` 读取 UTF-8 结果文件。
+
 ## 测试
 
 不需要 LabVIEW 的端到端测试用 `LabVIEWDialogFixture.exe` 模拟四类对话框：
@@ -106,12 +120,13 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File tests\run-tests.ps1
 覆盖：
 
 - Win32 `MessageBox`（`#32770`，含 internal error 文案）
-- 带 owner 的 WinForms 模态框（非 `#32770`，UIA 兜底）
-- 原生 `LVDChild` 窗口、无子按钮、只能按 Enter 关闭（模拟 LabVIEW `One Button Dialog`）
-- `--dry-run` 不点击、非目标进程不处理
-- 配置解析、按钮文本判定、internal error 识别等单元测试
+- 带 owner 的 WinForms 模态框（非 `#32770`）
+- 原生 `LVDChild` 窗口、无子按钮、只能按 Enter 关闭（模拟 LabVIEW `One Button Dialog`，需测试配置显式开启键盘兜底）
+- `--dry-run` 不点击、非目标进程不处理、危险标题（保存）不处理
+- 配置解析、按钮精确匹配、internal error 识别等单元测试
 
-真实 LabVIEW 验证记录见 [docs/verification.md](docs/verification.md)。
+真实 LabVIEW 验证记录见 [docs/verification.md](docs/verification.md)。CI 只跑构建、单元测试与扫描冒烟，
+GUI 端到端测试需在交互桌面本地运行。
 
 ## 排障
 
@@ -119,17 +134,20 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File tests\run-tests.ps1
 |---|---|
 | 日志只有“守护已启动” | exe 与 LabVIEW 完整性级别不同；确认从正常程序目录运行，必要时以管理员运行 |
 | 扫描为空 | 目标进程名不对；或对话框不在当前会话/桌面 |
-| 日志有“点击”但框不消失 | UIPI 拒绝跨级别消息；让守护与 LabVIEW 同权限运行 |
+| 日志有“点击”但框不消失 | UIPI 拒绝跨级别消息；让守护与 LabVIEW 同权限运行，日志会带 `failed`/多次尝试警告 |
 | 点了但自动化调用仍不返回 | LabVIEW 的 gRPC 服务可能已因强制关闭而卡死，需要重启 LabVIEW；守护只负责关闭对话框，不修复服务内部状态 |
 | 托盘图标不见 | 检查单实例是否已有进程；看 `logs\LabVIEWDialogWatchdog.log` |
+| 配置改了不生效 | 配置必须是 UTF-8、严格 JSON（容忍整行 `//` 注释）；解析失败会回退默认值并写 W 日志 |
 
 ## 已知限制
 
-- 只处理**可见的模态对话框**，不处理崩溃转储、Windows 错误报告、UAC 提权框、其他会话的窗口。
+- 只处理**可见的模态对话框**；标准 `#32770` 默认还要求“错误语义 / owner 被禁用 / 单按钮”之一，避免误点普通属性框。
 - 与 LabVIEW 必须同或更高完整性级别；Windows 的 UIPI 无法绕过。
-- `WM_CLOSE` 是最后兜底：它能解除阻塞，但可能让调用方拿到“被取消/被中止”，不保证业务结果正常返回。
-- 对 LabVIEW 自绘窗口，Enter 依赖 LabVIEW 的默认按钮处理；不同版本/不同对话框可能需要调整 `keyboardFallbackWindowClasses`。
-- 轮询而非窗口事件钩子：延迟约一个扫描周期（默认 300–500 ms），换来更低的资源占用与更少的全局钩子副作用。
+- `WM_CLOSE` 默认关闭，只有显式开启才作为最后兜底；即使开启也可能让调用方拿到“被取消/被中止”。
+- 无按钮自绘窗口的 Enter 兜底默认关闭；开启后依赖 LabVIEW 对默认按钮的处理，双按钮框会走默认按钮。
+- 轮询而非窗口事件钩子：延迟约一个扫描周期（默认 500 ms），换来更低的资源占用与更少的全局钩子副作用。
+- 按钮文本只做精确匹配（IDOK 例外），非中英文按钮可能漏检；可通过配置补充。
+- 只处理当前会话当前虚拟桌面上的窗口；其他会话、其他虚拟桌面的 cloaked 窗口不处理。
 
 ## 目录
 

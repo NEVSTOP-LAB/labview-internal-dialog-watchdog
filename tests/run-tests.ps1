@@ -48,6 +48,17 @@ function Wait-ProcessExit {
     return $Process.ExitCode
 }
 
+function Quote-Arg([string]$Value) {
+    if ($Value -match '\s') { return '"' + $Value + '"' }
+    return $Value
+}
+
+function Start-Quoted([string]$FilePath, [string[]]$Arguments, [string]$RedirectOut, [string]$RedirectErr) {
+    $quoted = @($Arguments | ForEach-Object { Quote-Arg $_ })
+    return Start-Process -FilePath $FilePath -ArgumentList $quoted -PassThru `
+        -RedirectStandardOutput $RedirectOut -RedirectStandardError $RedirectErr
+}
+
 function Invoke-WatchdogCli {
     param(
         [Parameter(Mandatory = $true)][string[]]$Arguments,
@@ -56,8 +67,7 @@ function Invoke-WatchdogCli {
     $stdout = Join-Path $TempDir "cli-$Tag.out"
     $stderr = Join-Path $TempDir "cli-$Tag.err"
     Remove-Item -LiteralPath $stdout, $stderr -Force -ErrorAction SilentlyContinue
-    $process = Start-Process -FilePath $exe -ArgumentList $Arguments -PassThru `
-        -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    $process = Start-Quoted -FilePath $exe -Arguments $Arguments -RedirectOut $stdout -RedirectErr $stderr
     $exitCode = Wait-ProcessExit -Process $process -TimeoutMs 60000
     return [pscustomobject]@{
         ExitCode = $exitCode
@@ -69,8 +79,8 @@ function Invoke-WatchdogCli {
 Write-Host '== 单元测试 =='
 $unitOut = Join-Path $TempDir 'unit.out'
 $unitErr = Join-Path $TempDir 'unit.err'
-$unitRun = Start-Process -FilePath $unitTests -ArgumentList @($TempDir) -PassThru `
-    -RedirectStandardOutput $unitOut -RedirectStandardError $unitErr
+$unitRun = Start-Quoted -FilePath $unitTests -Arguments @($TempDir) `
+    -RedirectOut $unitOut -RedirectErr $unitErr
 $unitExit = Wait-ProcessExit -Process $unitRun -TimeoutMs 30000
 Assert-Verdict 'unit tests' ($unitExit -eq 0) "exit=$unitExit"
 
@@ -94,6 +104,8 @@ function Invoke-DialogScenario {
         logDirectory       = $logDir
         pollIntervalMs     = 200
         minSeenCount       = 1
+        enableKeyboardFallback = $true
+        enableWindowCloseFallback = $false
         maxClickAttempts   = 3
         clickRetryDelayMs  = 500
         keyboardFallbackDelayMs = 300
@@ -105,8 +117,8 @@ function Invoke-DialogScenario {
 
     $fixtureOut = Join-Path $TempDir "fixture-$slug.out"
     $fixtureErr = Join-Path $TempDir "fixture-$slug.err"
-    $dialogProcess = Start-Process -FilePath $fixture -ArgumentList @($Mode, $marker) -PassThru `
-        -RedirectStandardOutput $fixtureOut -RedirectStandardError $fixtureErr
+    $dialogProcess = Start-Quoted -FilePath $fixture -Arguments @($Mode, $marker) `
+        -RedirectOut $fixtureOut -RedirectErr $fixtureErr
     try {
         $scanOut = Join-Path $TempDir "scan-$slug.json"
         $items = @()
@@ -149,6 +161,34 @@ Write-Host '== 端到端：非 #32770 模态框（UIA 兜底）=='
 Invoke-DialogScenario -Mode '--custom' -ExpectInternal $true
 Write-Host '== 端到端：LabVIEW 自绘对话框（无按钮，Enter 兜底）=='
 Invoke-DialogScenario -Mode '--labview-custom' -ExpectInternal $false
+
+Write-Host '== 安全用例：危险标题不处理 =='
+$dangerConfig = Join-Path $TempDir 'config-danger.json'
+$dangerLog = Join-Path $TempDir 'logs-danger'
+$dangerMarker = Join-Path $TempDir 'closed-danger.txt'
+New-Item -ItemType Directory -Force -Path $dangerLog | Out-Null
+Remove-Item -LiteralPath $dangerMarker -Force -ErrorAction SilentlyContinue
+@{
+    targetProcessNames = @('LabVIEWDialogFixture')
+    logDirectory       = $dangerLog
+    pollIntervalMs     = 200
+    showNotifications  = $false
+} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $dangerConfig -Encoding utf8
+$dangerProcess = Start-Quoted -FilePath $fixture -Arguments @('--danger', $dangerMarker) `
+    -RedirectOut (Join-Path $TempDir 'fixture-danger.out') -RedirectErr (Join-Path $TempDir 'fixture-danger.err')
+try {
+    Start-Sleep -Milliseconds 1200
+    $dangerOut = Join-Path $TempDir 'scan-danger.json'
+    $null = Invoke-WatchdogCli -Arguments @('--scan', '--json', '--config', $dangerConfig, '--out', $dangerOut) -Tag 'scan-danger'
+    $dangerText = Get-Content -LiteralPath $dangerOut -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
+    $dangerItems = @($dangerText | ConvertFrom-Json)
+    Assert-Verdict '危险标题（保存更改）不被识别' ($dangerItems.Count -eq 0) $dangerText
+    Assert-Verdict '危险标题对话框保持未关闭' (-not (Test-Path -LiteralPath $dangerMarker)) '不应点击保存类提示'
+} finally {
+    if (-not $dangerProcess.HasExited) {
+        Stop-Process -Id $dangerProcess.Id -Force -ErrorAction SilentlyContinue
+    }
+}
 
 Write-Host '== 安全用例：--dry-run 不点击 =='
 $dryConfig = Join-Path $TempDir 'config-dryrun.json'

@@ -25,7 +25,11 @@ namespace LabVIEWDialogWatchdog.Tests
 
             if (string.Equals(mode, "--custom", StringComparison.OrdinalIgnoreCase))
             {
-                ShowCustomDialog();
+                ShowCustomDialog("LabVIEW Internal Error", "LabVIEW internal error (custom dialog fixture)");
+            }
+            else if (string.Equals(mode, "--danger", StringComparison.OrdinalIgnoreCase))
+            {
+                ShowCustomDialog("保存更改", "是否保存对未命名 1 的更改？");
             }
             else if (string.Equals(mode, "--labview-custom", StringComparison.OrdinalIgnoreCase))
             {
@@ -47,7 +51,7 @@ namespace LabVIEWDialogWatchdog.Tests
             return 0;
         }
 
-        private static void ShowCustomDialog()
+        private static void ShowCustomDialog(string title, string message)
         {
             Application.EnableVisualStyles();
             using (var owner = new Form
@@ -61,7 +65,7 @@ namespace LabVIEWDialogWatchdog.Tests
                 owner.Show();
                 using (var dialog = new Form
                 {
-                    Text = "LabVIEW Internal Error",
+                    Text = title,
                     FormBorderStyle = FormBorderStyle.FixedDialog,
                     StartPosition = FormStartPosition.CenterScreen,
                     ClientSize = new Size(460, 150),
@@ -72,7 +76,7 @@ namespace LabVIEWDialogWatchdog.Tests
                 {
                     dialog.Controls.Add(new Label
                     {
-                        Text = "LabVIEW internal error (custom dialog fixture)",
+                        Text = message,
                         AutoSize = true,
                         Location = new Point(16, 22)
                     });

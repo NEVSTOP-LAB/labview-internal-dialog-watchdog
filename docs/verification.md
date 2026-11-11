@@ -10,17 +10,35 @@
 pwsh -NoProfile -ExecutionPolicy Bypass -File tests\run-tests.ps1
 ```
 
-结果：`ALL PASS (28 checks)`。
+结果：`ALL PASS (30 checks)`。
 
 覆盖：
 
 - Win32 `MessageBox`（`#32770`）扫描、点击、调用方恢复
 - `Internal Error` 文案识别
-- 带 owner 的 WinForms 模态框（非 `#32770`，UI Automation 兜底）
-- 原生 `LVDChild` 窗口、无子按钮、只能按 Enter 关闭（模拟 LabVIEW `One Button Dialog`）
+- 带 owner 的 WinForms 模态框（非 `#32770`）
+- 原生 `LVDChild` 窗口、无子按钮、只能按 Enter 关闭（模拟 LabVIEW `One Button Dialog`，测试配置显式开启键盘兜底）
+- 危险标题（“保存更改”）不被点击
 - `--dry-run` 不点击
 - 非目标进程不处理
-- 配置解析与按钮匹配单元测试
+- 配置解析、按钮精确匹配、internal error 识别等单元测试
+
+## 1.1 独立 review 后的默认安全策略
+
+两轮独立 agent review（2026-11-12）指出默认策略过于激进，已调整并补测：
+
+- `enableKeyboardFallback` 默认 `false`：无按钮自绘框不再默认按 Enter，需显式开启。
+- `enableWindowCloseFallback` 默认 `false`：`WM_CLOSE` 只在显式开启时作为最后兜底；真实事故中强关曾导致 LabVIEW AI gRPC 服务卡死。
+- `excludeDialogTitlePatterns` 默认排除保存/覆盖/删除/重命名/退出/停止（中英）。
+- `minSeenCount` 默认 `2`，减少瞬时窗口误触。
+- 按钮文本只做精确匹配（IDOK 例外），避免“关闭而不保存”命中“关闭”。
+- 标准 `#32770` 默认只处理：owner 被禁用 / 带错误语义 / 只有一个按钮；普通多按钮 OK 框不处理。
+- 扫描/点击移到线程池，不再阻塞托盘 UI；句柄复用会按 PID+类+标题+文本重置状态；dry-run 不再累计失败。
+
+> [!NOTE]
+> 第 2 节的 12 个真实对话框是在 review 前的默认值下抓到的；新逻辑对它们的判定依据仍然成立
+> （`Internal Warning` 命中错误语义、`error 8 ...` 对话框只有一个“确定”按钮），但建议在
+> LabVIEW gRPC 服务恢复后用新版本复跑一次真实场景确认。
 
 ## 2. 真实 LabVIEW 内部告警自动关闭
 
@@ -100,8 +118,10 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File tests\run-tests.ps1
 ## 5. 已知限制
 
 - 守护进程与目标进程必须同或更高完整性；Low 完整性目录（如某些沙箱工作区）里的 exe 会失效。
-- `WM_CLOSE` 是最后兜底，可能让调用方拿到“被取消/被中止”，不保证业务结果。
+- `WM_CLOSE` 默认关闭，只有显式开启才作为最后兜底；即使开启也可能让调用方拿到“被取消/被中止”。
+- 无按钮自绘窗口的 Enter 兜底默认关闭；开启后双按钮框会走默认按钮。
 - 不处理崩溃转储、Windows 错误报告、UAC 提权框、其他会话窗口。
+- 标准 `#32770` 默认只处理 owner 被禁用 / 错误语义 / 单按钮三种情况，普通多按钮 OK 框不处理。
 - 轮询延迟约一个扫描周期。
 
 原始日志保留在本机 `%LOCALAPPDATA%\Programs\LabVIEWDialogWatchdog\logs\`，不随仓库提交。

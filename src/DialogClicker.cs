@@ -6,7 +6,7 @@ namespace LabVIEWDialogWatchdog
     /// <summary>把“点击确认”的分层策略集中起来：越靠后越保守。</summary>
     public static class DialogClicker
     {
-        public static bool Click(DialogInfo dialog, int attempt, out string method)
+        public static bool Click(DialogInfo dialog, int attempt, WatchdogSettings settings, out string method)
         {
             method = string.Empty;
             if (dialog == null || !Native.IsWindow(dialog.Handle))
@@ -17,7 +17,7 @@ namespace LabVIEWDialogWatchdog
 
             if (string.Equals(dialog.ButtonSource, "keyboard", StringComparison.OrdinalIgnoreCase))
             {
-                return ClickKeyboard(dialog, attempt, out method);
+                return ClickKeyboard(dialog, attempt, settings, out method);
             }
 
             IntPtr button = dialog.ButtonHandle;
@@ -41,49 +41,54 @@ namespace LabVIEWDialogWatchdog
                 }
 
                 IntPtr result;
-                Native.SendMessageTimeout(
+                IntPtr sent = Native.SendMessageTimeout(
                     button, Native.BM_CLICK, IntPtr.Zero, IntPtr.Zero,
                     Native.SMTO_ABORTIFHUNG, 1500, out result);
-                method = "BM_CLICK(send)";
-                return true;
+                method = sent != IntPtr.Zero ? "BM_CLICK(send)" : "BM_CLICK(send) failed";
+                return sent != IntPtr.Zero;
             }
 
-            // 兜底 1：向对话框发 IDOK 命令。
-            Native.PostMessage(dialog.Handle, Native.WM_COMMAND, (IntPtr)Native.IDOK, button);
-            // 兜底 2：回车触发默认按钮。
-            Native.PostMessage(dialog.Handle, Native.WM_KEYDOWN, (IntPtr)Native.VK_RETURN, IntPtr.Zero);
+            // 兜底：向对话框发 IDOK 命令并回车触发默认按钮。
+            bool commandPosted = Native.PostMessage(dialog.Handle, Native.WM_COMMAND, (IntPtr)Native.IDOK, button);
+            bool keyPosted = Native.PostMessage(dialog.Handle, Native.WM_KEYDOWN, (IntPtr)Native.VK_RETURN, IntPtr.Zero);
             Native.PostMessage(dialog.Handle, Native.WM_KEYUP, (IntPtr)Native.VK_RETURN, IntPtr.Zero);
             method = "WM_COMMAND(IDOK)+Enter";
-            return true;
+            return commandPosted || keyPosted;
         }
 
         /// <summary>
         /// LabVIEW 自绘对话框（如 One Button Dialog）没有可枚举的按钮：
-        /// 先激活窗口再发 Enter；仍不关闭则发 IDOK+Enter；最后才退到 WM_CLOSE。
+        /// 先激活窗口再发 Enter；仍不关闭则发 IDOK+Enter；WM_CLOSE 必须显式开启。
         /// </summary>
-        private static bool ClickKeyboard(DialogInfo dialog, int attempt, out string method)
+        private static bool ClickKeyboard(DialogInfo dialog, int attempt, WatchdogSettings settings, out string method)
         {
             if (attempt <= 1)
             {
                 Native.SetForegroundWindow(dialog.Handle);
                 System.Threading.Thread.Sleep(80);
-                Native.PostMessage(dialog.Handle, Native.WM_KEYDOWN, (IntPtr)Native.VK_RETURN, IntPtr.Zero);
-                Native.PostMessage(dialog.Handle, Native.WM_KEYUP, (IntPtr)Native.VK_RETURN, IntPtr.Zero);
+                bool down = Native.PostMessage(dialog.Handle, Native.WM_KEYDOWN, (IntPtr)Native.VK_RETURN, IntPtr.Zero);
+                bool up = Native.PostMessage(dialog.Handle, Native.WM_KEYUP, (IntPtr)Native.VK_RETURN, IntPtr.Zero);
                 method = "Enter(foreground)";
-                return true;
+                return down && up;
             }
             if (attempt == 2)
             {
-                Native.PostMessage(dialog.Handle, Native.WM_COMMAND, (IntPtr)Native.IDOK, IntPtr.Zero);
-                Native.PostMessage(dialog.Handle, Native.WM_KEYDOWN, (IntPtr)Native.VK_RETURN, IntPtr.Zero);
-                Native.PostMessage(dialog.Handle, Native.WM_KEYUP, (IntPtr)Native.VK_RETURN, IntPtr.Zero);
+                bool command = Native.PostMessage(dialog.Handle, Native.WM_COMMAND, (IntPtr)Native.IDOK, IntPtr.Zero);
+                bool down = Native.PostMessage(dialog.Handle, Native.WM_KEYDOWN, (IntPtr)Native.VK_RETURN, IntPtr.Zero);
+                bool up = Native.PostMessage(dialog.Handle, Native.WM_KEYUP, (IntPtr)Native.VK_RETURN, IntPtr.Zero);
                 method = "WM_COMMAND(IDOK)+Enter";
-                return true;
+                return command && down && up;
             }
 
-            Native.PostMessage(dialog.Handle, Native.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
-            method = "WM_CLOSE";
-            return true;
+            if (settings.enableWindowCloseFallback)
+            {
+                bool closed = Native.PostMessage(dialog.Handle, Native.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
+                method = "WM_CLOSE(opt-in)";
+                return closed;
+            }
+
+            method = "give-up (enableWindowCloseFallback=false)";
+            return false;
         }
 
         /// <summary>通过 UI Automation 找到名为 buttonText 的按钮并 Invoke。</summary>

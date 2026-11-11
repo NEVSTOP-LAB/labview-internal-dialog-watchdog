@@ -20,23 +20,30 @@ namespace LabVIEWDialogWatchdog
         /// <summary>永不点击的按钮文本。</summary>
         public string[] excludeButtonTexts = { "Cancel", "取消", "Stop", "停止", "Abort", "放弃", "No", "否" };
 
-        /// <summary>标题命中这些片段的对话框不处理（用于避开保存/覆盖等危险确认）。</summary>
-        public string[] excludeDialogTitlePatterns = { };
+        /// <summary>标题命中这些片段的对话框不处理（默认排除保存/覆盖/删除等危险提示）。</summary>
+        public string[] excludeDialogTitlePatterns =
+        {
+            "保存", "覆盖", "删除", "重命名", "退出", "停止",
+            "Save", "Overwrite", "Delete", "Rename", "Exit", "Stop"
+        };
 
-        /// <summary>可以在没有原生按钮时按 Enter / WM_CLOSE 兜底的窗口类（LabVIEW 自绘对话框）。</summary>
+        /// <summary>可以在没有原生按钮时按 Enter 的窗口类（LabVIEW 自绘对话框）。</summary>
         public string[] keyboardFallbackWindowClasses = { "LVDChild" };
 
         /// <summary>没有原生按钮时，首次按 Enter 前的等待（毫秒），避免误触瞬时进度框。</summary>
         public int keyboardFallbackDelayMs = 800;
 
-        /// <summary>是否启用无按钮时的键盘兜底。</summary>
-        public bool enableKeyboardFallback = true;
+        /// <summary>是否启用无按钮时的键盘兜底。默认关闭：只有显式开启才会对无按钮自绘框按 Enter。</summary>
+        public bool enableKeyboardFallback = false;
+
+        /// <summary>是否允许 WM_CLOSE 作为最后兜底。默认关闭：强关可能破坏调用方状态。</summary>
+        public bool enableWindowCloseFallback = false;
 
         /// <summary>扫描间隔（毫秒）。</summary>
         public int pollIntervalMs = 500;
 
         /// <summary>同一对话框至少连续出现多少次才点击，避免误触瞬时窗口。</summary>
-        public int minSeenCount = 1;
+        public int minSeenCount = 2;
 
         /// <summary>同一对话框最多尝试点击次数。</summary>
         public int maxClickAttempts = 3;
@@ -97,7 +104,14 @@ namespace LabVIEWDialogWatchdog
             }
             if (excludeButtonTexts == null) excludeButtonTexts = new string[0];
             if (dialogWindowClasses == null) dialogWindowClasses = new string[0];
-            if (excludeDialogTitlePatterns == null) excludeDialogTitlePatterns = new string[0];
+            if (excludeDialogTitlePatterns == null || excludeDialogTitlePatterns.Length == 0)
+            {
+                excludeDialogTitlePatterns = new[]
+                {
+                    "保存", "覆盖", "删除", "重命名", "退出", "停止",
+                    "Save", "Overwrite", "Delete", "Rename", "Exit", "Stop"
+                };
+            }
             if (keyboardFallbackWindowClasses == null || keyboardFallbackWindowClasses.Length == 0)
             {
                 keyboardFallbackWindowClasses = new[] { "LVDChild" };
@@ -153,12 +167,13 @@ namespace LabVIEWDialogWatchdog
   ""dialogWindowClasses"": [],
   ""confirmButtonTexts"": [""OK"", ""确定"", ""Continue"", ""继续"", ""Close"", ""关闭""],
   ""excludeButtonTexts"": [""Cancel"", ""取消"", ""Stop"", ""停止"", ""Abort"", ""放弃"", ""No"", ""否""],
-  ""excludeDialogTitlePatterns"": [],
+  ""excludeDialogTitlePatterns"": [""保存"", ""覆盖"", ""删除"", ""重命名"", ""退出"", ""停止"", ""Save"", ""Overwrite"", ""Delete"", ""Rename"", ""Exit"", ""Stop""],
   ""keyboardFallbackWindowClasses"": [""LVDChild""],
   ""keyboardFallbackDelayMs"": 800,
-  ""enableKeyboardFallback"": true,
+  ""enableKeyboardFallback"": false,
+  ""enableWindowCloseFallback"": false,
   ""pollIntervalMs"": 500,
-  ""minSeenCount"": 1,
+  ""minSeenCount"": 2,
   ""maxClickAttempts"": 3,
   ""clickRetryDelayMs"": 900,
   ""startPaused"": false,

@@ -31,9 +31,29 @@ jobs:
           while (-not (Test-Path -LiteralPath $out) -and (Get-Date) -lt $deadline) {
             Start-Sleep -Milliseconds 200
           }
-          Get-Content -LiteralPath $out -Raw
+          if (-not (Test-Path -LiteralPath $out)) { throw '扫描结果文件未生成' }
+          $text = Get-Content -LiteralPath $out -Raw -Encoding UTF8
+          $items = @($text | ConvertFrom-Json)
+          Write-Output ("scan items: " + $items.Count)
+          if ($text.Trim() -notmatch '^\[.*\]$') { throw "扫描结果不是 JSON 数组: $text" }
 
       - uses: actions/upload-artifact@v4
         with:
           name: LabVIEWDialogWatchdog
           path: dist/LabVIEWDialogWatchdog.exe
+
+  e2e:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 构建测试夹具
+        shell: pwsh
+        run: ./build.ps1 -Tests -Clean
+
+      - name: 端到端（对话框夹具）
+        shell: pwsh
+        run: |
+          ./tests/run-tests.ps1 -SkipBuild -TempDir "$env:RUNNER_TEMP\watchdog-e2e"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

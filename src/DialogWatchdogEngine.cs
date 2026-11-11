@@ -23,6 +23,7 @@ namespace LabVIEWDialogWatchdog
             public bool Completed;
             public bool GaveUp;
             public bool KeyboardDelayApplied;
+            public bool DryRunLogged;
             public DialogInfo LastInfo;
         }
 
@@ -41,6 +42,7 @@ namespace LabVIEWDialogWatchdog
         public int DetectedCount { get; private set; }
         public int DismissedCount { get; private set; }
         public int FailedCount { get; private set; }
+        public int ClickSendFailures { get; private set; }
 
         public event EventHandler<DialogDismissedEventArgs> Dismissed;
         public event EventHandler<DialogInfo> Detected;
@@ -68,7 +70,13 @@ namespace LabVIEWDialogWatchdog
             foreach (DialogInfo dialog in dialogs)
             {
                 DialogState state;
-                if (!_states.TryGetValue(dialog.Handle, out state))
+                if (_states.TryGetValue(dialog.Handle, out state) && !SameIdentity(state.LastInfo, dialog))
+                {
+                    // 窗口句柄被复用成另一个对话框：重置状态，避免新对话框被旧状态跳过。
+                    _states.Remove(dialog.Handle);
+                    state = null;
+                }
+                if (state == null)
                 {
                     state = new DialogState { LastSeenUtc = now, LastInfo = dialog };
                     _states[dialog.Handle] = state;
@@ -93,13 +101,26 @@ namespace LabVIEWDialogWatchdog
                 {
                     continue;
                 }
+
+                if (DryRun)
+                {
+                    if (!state.DryRunLogged)
+                    {
+                        state.DryRunLogged = true;
+                        _log.Info("[dry-run] 检测到，将点击 " + Describe(string.Empty, dialog));
+                    }
+                    state.NextAttemptUtc = now.AddSeconds(2);
+                    continue;
+                }
+
                 if (state.Attempts >= _settings.maxClickAttempts)
                 {
                     if (!state.GaveUp)
                     {
                         state.GaveUp = true;
                         FailedCount++;
-                        _log.Warn("多次尝试后对话框仍未关闭，停止点击：" + Describe(string.Empty, dialog));
+                        _log.Warn("多次尝试后对话框仍未关闭，停止点击（若同权限仍失败，可能是 UIPI/完整性拒绝）："
+                                  + Describe(string.Empty, dialog));
                     }
                     continue;
                 }
@@ -124,32 +145,35 @@ namespace LabVIEWDialogWatchdog
                 state.VerifyAtUtc = now.AddMilliseconds(400);
                 state.NextAttemptUtc = now.AddMilliseconds(_settings.clickRetryDelayMs);
 
-                if (DryRun)
-                {
-                    _log.Info("[dry-run] 将点击 " + Describe(string.Empty, dialog));
-                    continue;
-                }
-
                 string method;
-                DialogClicker.Click(dialog, state.Attempts, out method);
-                _log.Info(string.Format(
-                    "第 {0} 次点击（{1}）：{2}",
-                    state.Attempts,
-                    method,
-                    Describe(string.Empty, dialog)));
+                bool sent = DialogClicker.Click(dialog, state.Attempts, _settings, out method);
+                if (sent)
+                {
+                    _log.Info(string.Format(
+                        "第 {0} 次点击（{1}）：{2}",
+                        state.Attempts,
+                        method,
+                        Describe(string.Empty, dialog)));
+                }
+                else
+                {
+                    ClickSendFailures++;
+                    _log.Warn(string.Format(
+                        "第 {0} 次点击发送失败（{1}）：{2}",
+                        state.Attempts,
+                        method,
+                        Describe(string.Empty, dialog)));
+                }
             }
 
-            // 点击后确认窗口是否真的消失。
+            // 点击后确认窗口是否真的消失；成功即移除状态，避免句柄复用时串台。
             foreach (KeyValuePair<IntPtr, DialogState> pair in _states.ToList())
             {
                 IntPtr handle = pair.Key;
                 DialogState state = pair.Value;
                 if (state.Completed)
                 {
-                    if (now - state.LastSeenUtc > TimeSpan.FromSeconds(15))
-                    {
-                        _states.Remove(handle);
-                    }
+                    _states.Remove(handle);
                     continue;
                 }
 
@@ -169,6 +193,7 @@ namespace LabVIEWDialogWatchdog
                                 Attempts = state.Attempts
                             });
                         }
+                        _states.Remove(handle);
                     }
                     else if (state.Attempts == 0)
                     {
@@ -184,6 +209,18 @@ namespace LabVIEWDialogWatchdog
             }
 
             return dialogs;
+        }
+
+        private static bool SameIdentity(DialogInfo left, DialogInfo right)
+        {
+            if (left == null || right == null)
+            {
+                return false;
+            }
+            return left.ProcessId == right.ProcessId
+                   && string.Equals(left.ClassName, right.ClassName, StringComparison.Ordinal)
+                   && string.Equals(left.Title, right.Title, StringComparison.Ordinal)
+                   && string.Equals(left.Text, right.Text, StringComparison.Ordinal);
         }
 
         public static string Describe(string prefix, DialogInfo dialog)

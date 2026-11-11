@@ -21,6 +21,9 @@ namespace LabVIEWDialogWatchdog.Tests
             Check("默认确认文本包含 OK", WindowScanner.IsConfirmText("OK", defaults.confirmButtonTexts));
             Check("Continue 视为确认", WindowScanner.IsConfirmText("Continue", defaults.confirmButtonTexts));
             Check("Cancel 不是确认文本", !WindowScanner.IsConfirmText("Cancel", defaults.confirmButtonTexts));
+            Check("关闭而不保存 不视为确认", !WindowScanner.IsConfirmText("关闭而不保存", defaults.confirmButtonTexts));
+            Check("Close without saving 不视为确认", !WindowScanner.IsConfirmText("Close without saving", defaults.confirmButtonTexts));
+            Check("危险标题默认被排除", IsSaveTitleExcluded(defaults));
             Check("取消属于排除文本", WindowScanner.IsExcludedText("取消", defaults.excludeButtonTexts));
             Check("确定不属于排除文本", !WindowScanner.IsExcludedText("确定", defaults.excludeButtonTexts));
             Check("识别 internal error", WindowScanner.HasInternalErrorText("LabVIEW internal error: 0x8000"));
@@ -59,6 +62,18 @@ namespace LabVIEWDialogWatchdog.Tests
 
             Console.WriteLine(_failures == 0 ? "UNIT PASS" : "UNIT FAIL " + _failures);
             return _failures == 0 ? 0 : 1;
+        }
+
+        private static bool IsSaveTitleExcluded(WatchdogSettings settings)
+        {
+            foreach (string pattern in settings.excludeDialogTitlePatterns)
+            {
+                if ("保存更改".IndexOf(pattern, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         private static void Check(string name, bool condition)

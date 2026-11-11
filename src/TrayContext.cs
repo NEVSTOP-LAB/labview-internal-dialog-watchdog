@@ -61,11 +61,13 @@ namespace LabVIEWDialogWatchdog
         private readonly Log _log;
         private readonly DialogWatchdogEngine _engine;
         private readonly NotifyIcon _notifyIcon;
-        private readonly Timer _timer;
+        private readonly System.Threading.Timer _timer;
+        private readonly Control _marshaler;
         private readonly ToolStripMenuItem _statusItem;
         private readonly ToolStripMenuItem _pauseItem;
         private readonly ToolStripMenuItem _autostartItem;
         private readonly Icon _icon;
+        private int _tickBusy;
         private bool _disposed;
 
         public TrayContext(WatchdogSettings settings, Log log)
@@ -107,9 +109,10 @@ namespace LabVIEWDialogWatchdog
             };
             _notifyIcon.DoubleClick += delegate { OpenLog(); };
 
-            _timer = new Timer { Interval = settings.pollIntervalMs };
-            _timer.Tick += OnTick;
-            _timer.Start();
+            // 扫描与点击放到线程池，托盘 UI 不被 SendMessageTimeout/UIA 阻塞。
+            _marshaler = new Control();
+            IntPtr forceHandle = _marshaler.Handle;
+            _timer = new System.Threading.Timer(OnTick, null, 0, settings.pollIntervalMs);
 
             UpdateStatus();
             _log.Info(string.Format(
@@ -125,35 +128,58 @@ namespace LabVIEWDialogWatchdog
             }
         }
 
-        private void OnTick(object sender, EventArgs e)
+        private void OnTick(object state)
         {
+            if (System.Threading.Interlocked.CompareExchange(ref _tickBusy, 1, 0) != 0)
+            {
+                return;
+            }
             try
             {
                 _engine.Tick();
-                UpdateStatus();
+                PostToUi(UpdateStatus);
             }
             catch (Exception ex)
             {
                 _log.Error("轮询异常：" + ex);
             }
+            finally
+            {
+                System.Threading.Interlocked.Exchange(ref _tickBusy, 0);
+            }
+        }
+
+        private void PostToUi(Action action)
+        {
+            try
+            {
+                _marshaler.BeginInvoke(action);
+            }
+            catch
+            {
+                // 窗口销毁后忽略。
+            }
         }
 
         private void OnDismissed(object sender, DialogDismissedEventArgs e)
         {
-            UpdateStatus();
-            if (!_settings.showNotifications)
+            PostToUi(delegate
             {
-                return;
-            }
+                UpdateStatus();
+                if (!_settings.showNotifications)
+                {
+                    return;
+                }
 
-            string suffix = e.Dialog.InternalError ? "（internal error）" : string.Empty;
-            string title = string.IsNullOrEmpty(e.Dialog.Title) ? "LabVIEW" : e.Dialog.Title;
-            if (title.Length > 40)
-            {
-                title = title.Substring(0, 40) + "…";
-            }
-            string message = string.Format("已点击“{0}”关闭对话框{suffix}：{1}", e.Dialog.ButtonText, title);
-            _notifyIcon.ShowBalloonTip(3000, "LabVIEW 对话框守护", message, ToolTipIcon.Info);
+                string suffix = e.Dialog.InternalError ? "（internal warning）" : string.Empty;
+                string title = string.IsNullOrEmpty(e.Dialog.Title) ? "LabVIEW" : e.Dialog.Title;
+                if (title.Length > 40)
+                {
+                    title = title.Substring(0, 40) + "…";
+                }
+                string message = string.Format("已点击“{0}”关闭对话框{1}：{2}", e.Dialog.ButtonText, suffix, title);
+                _notifyIcon.ShowBalloonTip(3000, "LabVIEW 对话框守护", message, ToolTipIcon.Info);
+            });
         }
 
         private void UpdateStatus()
@@ -163,7 +189,7 @@ namespace LabVIEWDialogWatchdog
                 "状态：{0} · 已处理 {1} 次 · 失败 {2} 次",
                 state,
                 _engine.DismissedCount,
-                _engine.FailedCount);
+                _engine.FailedCount + _engine.ClickSendFailures);
             _pauseItem.Text = _engine.Paused ? "恢复监控" : "暂停监控";
             _notifyIcon.Text = Truncate("LabVIEW 对话框守护 · " + state, 63);
         }
@@ -260,10 +286,10 @@ namespace LabVIEWDialogWatchdog
             if (!_disposed && disposing)
             {
                 _disposed = true;
-                _timer.Stop();
                 _timer.Dispose();
                 _notifyIcon.Visible = false;
                 _notifyIcon.Dispose();
+                _marshaler.Dispose();
                 _icon.Dispose();
                 _log.Info("守护已退出。");
             }

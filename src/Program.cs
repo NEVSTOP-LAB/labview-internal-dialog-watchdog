@@ -99,7 +99,7 @@ namespace LabVIEWDialogWatchdog
             }
             if (options.ShowVersion)
             {
-                Console.WriteLine(AppTitle + " " + typeof(Program).Assembly.GetName().Version);
+                WriteConsole(AppTitle + " " + typeof(Program).Assembly.GetName().Version);
                 return 0;
             }
 
@@ -112,10 +112,11 @@ namespace LabVIEWDialogWatchdog
                 settings.dryRun = true;
             }
 
-            var log = new Log(
-                settings.ResolveLogDirectory(),
-                "LabVIEWDialogWatchdog.log",
-                options.Scan || options.WatchSeconds > 0);
+            Log log = CreateLog(settings, options.Scan || options.WatchSeconds > 0);
+            if (log == null)
+            {
+                return 1;
+            }
             if (!string.IsNullOrEmpty(warning))
             {
                 log.Warn(warning);
@@ -130,6 +131,32 @@ namespace LabVIEWDialogWatchdog
                 return RunHeadless(settings, log, options);
             }
             return RunTray(settings, log, options);
+        }
+
+        private static Log CreateLog(WatchdogSettings settings, bool echo)
+        {
+            try
+            {
+                return new Log(settings.ResolveLogDirectory(), "LabVIEWDialogWatchdog.log", echo);
+            }
+            catch
+            {
+                // 配置的日志目录不可写时退回临时目录。
+            }
+            try
+            {
+                string fallback = Path.Combine(Path.GetTempPath(), "LabVIEWDialogWatchdog");
+                return new Log(fallback, "LabVIEWDialogWatchdog.log", echo);
+            }
+            catch
+            {
+                MessageBox.Show(
+                    "无法创建日志目录，守护进程无法启动。请检查 logDirectory 配置或程序目录权限。",
+                    AppTitle,
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+                return null;
+            }
         }
 
         private static int RunScan(WatchdogSettings settings, CliOptions options)
@@ -242,11 +269,6 @@ namespace LabVIEWDialogWatchdog
 
         private static int RunTray(WatchdogSettings settings, Log log, CliOptions options)
         {
-            if (settings.startPaused && options.DryRun)
-            {
-                // 允许测试用 --start-paused 搭配 --watch-seconds，而不是托盘模式。
-            }
-
             Mutex mutex = null;
             bool ownsMutex = false;
             if (!options.NoSingleInstance)
@@ -260,13 +282,17 @@ namespace LabVIEWDialogWatchdog
                 {
                     ownsMutex = true;
                 }
+                catch (UnauthorizedAccessException)
+                {
+                    log.Warn("单实例互斥量不可用（权限不足），继续启动。");
+                    mutex.Dispose();
+                    mutex = null;
+                    ownsMutex = true;
+                }
                 if (!ownsMutex)
                 {
-                    MessageBox.Show(
-                        "LabVIEW 对话框守护已经在运行。",
-                        AppTitle,
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Information);
+                    // 开机自启/重复启动时静默退出，避免无人值守挂一个模态框。
+                    log.Info("已有实例在运行，本次启动退出。");
                     mutex.Dispose();
                     return 0;
                 }
@@ -303,19 +329,20 @@ namespace LabVIEWDialogWatchdog
 
         private static void PrintHelp()
         {
-            Console.WriteLine(AppTitle);
-            Console.WriteLine("用法：LabVIEWDialogWatchdog.exe [选项]");
-            Console.WriteLine();
-            Console.WriteLine("  （无参数）              以托盘方式运行");
-            Console.WriteLine("  --scan [--json]         扫描一次当前对话框并输出，然后退出");
-            Console.WriteLine("  --watch-seconds <n>     无界面运行 n 秒，用于自动化测试");
-            Console.WriteLine("  --config <path>         指定配置文件");
-            Console.WriteLine("  --dry-run               只记录不点击");
-            Console.WriteLine("  --require-dismissal     --watch-seconds 结束时若无成功关闭则返回 2");
-            Console.WriteLine("  --exit-after-dismiss    成功关闭一个对话框后立即结束 --watch-seconds");
-            Console.WriteLine("  --out <path>            把扫描结果/运行摘要写入文件");
-            Console.WriteLine("  --no-single-instance    跳过单实例检查（测试用）");
-            Console.WriteLine("  --version               输出版本");
+            WriteConsole(
+                AppTitle + Environment.NewLine +
+                "用法：LabVIEWDialogWatchdog.exe [选项]" + Environment.NewLine +
+                Environment.NewLine +
+                "  （无参数）              以托盘方式运行" + Environment.NewLine +
+                "  --scan [--json]         扫描一次当前对话框并输出，然后退出" + Environment.NewLine +
+                "  --watch-seconds <n>     无界面运行 n 秒，用于自动化测试" + Environment.NewLine +
+                "  --config <path>         指定配置文件" + Environment.NewLine +
+                "  --out <path>            把扫描结果/运行摘要写入文件（GUI 子系统下更可靠）" + Environment.NewLine +
+                "  --dry-run               只记录不点击" + Environment.NewLine +
+                "  --require-dismissal     --watch-seconds 结束时若无成功关闭则返回 2" + Environment.NewLine +
+                "  --exit-after-dismiss    成功关闭一个对话框后立即结束 --watch-seconds" + Environment.NewLine +
+                "  --no-single-instance    跳过单实例检查（测试用）" + Environment.NewLine +
+                "  --version               输出版本");
         }
     }
 }

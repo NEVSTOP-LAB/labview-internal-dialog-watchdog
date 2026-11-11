@@ -9,6 +9,7 @@ Windows 托盘守护进程：检测 LabVIEW 被模态对话框卡住的情况，
 - 默认每 500 ms 扫描一次，静止时 CPU 接近 0
 - 只处理指定进程（默认 `LabVIEW`）的可见模态对话框，默认只点“确定/OK/继续/关闭”
 - 默认安全策略：危险标题（保存/覆盖/删除/重命名等）不处理；无按钮自绘框的 Enter 兜底与 `WM_CLOSE` 兜底都需要显式开启
+- 处理 LabVIEW 自绘 `One Button Dialog` 时，把 `enableKeyboardFallback` 设为 `true`；该路径已用真实 MCP 调用验证：对话框被 Enter 关闭、调用原样返回（见 `docs/verification.md` 3.2）
 - 每处理一个对话框写一条日志，可在托盘菜单打开
 
 ## 工作原理
@@ -125,8 +126,9 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File tests\run-tests.ps1
 - `--dry-run` 不点击、非目标进程不处理、危险标题（保存）不处理
 - 配置解析、按钮精确匹配、internal error 识别等单元测试
 
-真实 LabVIEW 验证记录见 [docs/verification.md](docs/verification.md)。CI 只跑构建、单元测试与扫描冒烟，
-GUI 端到端测试需在交互桌面本地运行。
+真实 LabVIEW 验证记录见 [docs/verification.md](docs/verification.md)：包括 12+6 个真实内部告警自动关闭，
+以及 `One Button Dialog` 阻塞 MCP 调用、守护按 Enter 后调用原样返回的完整闭环。CI 只跑构建、单元测试与扫描冒烟，
+GUI 端到端测试需在交互桌面本地运行（CI 另有一个 e2e job 跑夹具）。
 
 ## 排障
 
@@ -145,6 +147,7 @@ GUI 端到端测试需在交互桌面本地运行。
 - 与 LabVIEW 必须同或更高完整性级别；Windows 的 UIPI 无法绕过。
 - `WM_CLOSE` 默认关闭，只有显式开启才作为最后兜底；即使开启也可能让调用方拿到“被取消/被中止”。
 - 无按钮自绘窗口的 Enter 兜底默认关闭；开启后依赖 LabVIEW 对默认按钮的处理，双按钮框会走默认按钮。
+  真实 `One Button Dialog` + MCP 调用已验证开启后可闭环（`docs/verification.md` 3.2）。
 - 轮询而非窗口事件钩子：延迟约一个扫描周期（默认 500 ms），换来更低的资源占用与更少的全局钩子副作用。
 - 按钮文本只做精确匹配（IDOK 例外），非中英文按钮可能漏检；可通过配置补充。
 - 只处理当前会话当前虚拟桌面上的窗口；其他会话、其他虚拟桌面的 cloaked 窗口不处理。

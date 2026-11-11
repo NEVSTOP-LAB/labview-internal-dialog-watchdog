@@ -1,0 +1,5 @@
+<VI _name="LvaiDialogProbe.vi" description="Shows a modal One Button Dialog at startup and blocks until the dialog is dismissed. Used to probe how a modal dialog blocks an MCP run call.">
+  <Constant _name="probe message" outputs="value:10.value" type="string" uid="10" uid_parent="root" value="LVAI modal dialog probe - click OK"/>
+  <Constant _name="button label" outputs="value:20.value" type="string" uid="20" uid_parent="root" value="OK"/>
+  <Node _name="One Button Dialog" inputs="message:10.value,button name (&quot;OK&quot;):20.value" uid="30" uid_parent="root"/>
+</VI>

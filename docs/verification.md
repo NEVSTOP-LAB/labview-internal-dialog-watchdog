@@ -86,25 +86,52 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File tests\run-tests.ps1
 
 说明收紧后的条件没有误伤真实内部告警；`error 8` 框走单按钮规则、`Internal Warning` 走错误语义规则。
 
-## 3. MCP 被阻塞 → 解除阻塞
+## 3. MCP 被阻塞 → 守护按 Enter → 调用返回（闭环）
+
+### 3.1 标准 #32770 内部告警
 
 - 2026-11-11 23:48：`lvai_validate_aixml backend="grpc"` 触发真实 `#32770` 内部告警
   `Internal Warning 0xBB613420 : "HeapObjMapImpl.cpp", line 226`，标题「错误」。
 - 弹出后 LabVIEW `LVFrame enabled=0`，所有 labview-mcp 调用超时/失败（无法继续）。
-- 从 Medium 完整性 shell 向按钮 `hwnd` 发送 `BM_CLICK` 后对话框关闭，MCP 恢复可用。
+- 向按钮 `hwnd` 发送 `BM_CLICK` 后对话框关闭，MCP 恢复可用。
 - 同一类 `#32770` 对话框随后由守护进程在真实 LabVIEW 启动过程中自动关闭（见第 2 节）。
 
+### 3.2 自绘 LVDChild（One Button Dialog）闭环
+
+2026-11-12 07:08 与 07:09，用 labview-mcp 的 **pylabview/ActiveX** 后端运行真实的
+`One Button Dialog` VI（`LvaiDialogProbe.vi`）；守护进程开启键盘兜底（`enableKeyboardFallback=true`，
+`WM_CLOSE` 仍关闭）后连续两次都完成了闭环：
+
+| 次数 | MCP 结果 | 检测到弹窗 | 发 Enter | 弹窗关闭 |
+|---|---|---|---|---|
+| 1 | `ok: true, finished: true, runMs: 957` | 07:08:34.584 | 07:08:35.307 | 07:08:35.849 |
+| 2 | `ok: true, finished: true, runMs: 901` | 07:09:08.439 | 07:09:09.152 | 07:09:09.690 |
+
+守护日志原文：
+
+```text
+2026-11-12 07:08:34.584 [I] 检测到阻塞对话框：pid=28864 process=LabVIEW class=LVDChild title='' button='(Enter)' source=keyboard internalError=False ownerDisabled=True text=''
+2026-11-12 07:08:34.585 [I] 对话框没有可枚举按钮，等待 500ms 后按 Enter：...
+2026-11-12 07:08:35.307 [I] 第 1 次点击（Enter(foreground)）：...
+2026-11-12 07:08:35.849 [I] 对话框已关闭：...
+```
+
+MCP 调用返回：
+
+```json
+{"ok":true,"via":"ActiveX","ran":true,"finished":true,"aborted":false,"runMs":957}
+```
+
+两次都是“第一次尝试 Enter 即关闭”，没有使用 `WM_CLOSE`；调用恢复后 LabVIEW 主窗口
+`LVFrame enabled=1`，无残留对话框。
+
 > [!NOTE]
-> 本次没有重新跑通“MCP 调用在守护进程自动点击后原样返回”的完整闭环：
-> 测试中对 `One Button Dialog` 先误用了 `WM_CLOSE` 兜底，强制关闭后 LabVIEW 的
-> AI gRPC 服务卡死，重启 LabVIEW 后该服务也未恢复（启动时持续抛出 `image.cpp`
-> 内部告警）。这是测试环境/服务状态问题，不是守护进程的点击逻辑问题。
-> 守护进程对真实 `#32770` 内部告警的自动关闭已在第 2 节得到验证；
-> 自绘 `LVDChild` 对话框的 Enter 路径由夹具覆盖。
->
-> 后续若需补该闭环：重启 LabVIEW 并确认 `lvai_status` 的 `grpcService.reachable=true`，
-> 生成 `/One Button Dialog` VI（backend=grpc），运行 `lvai_run_vi_as_top_level`，
-> 观察守护日志出现 `第 1 次点击（Enter(foreground)）` 且调用返回。
+> 环境修复：DSH 启动的 labview-mcp 服务进程是 Low 完整性，写不了 Medium 的
+> `%TEMP%\LabVIEWMCP`（报 `Access to the path ... panel-read is denied`）。给该临时目录
+> 加 Low 完整性标签后可正常写：
+> `icacls "$env:LOCALAPPDATA\Temp\LabVIEWMCP" /setintegritylevel "(OI)(CI)L" /T`。
+> 该实例的 gRPC 服务在之前一次强制 `WM_CLOSE` 后一直未恢复，因此这次闭环走
+> pylabview/ActiveX 后端；对话框与点击路径与 gRPC 场景相同。
 
 ## 4. 复现步骤（真实 LabVIEW）
 
@@ -125,9 +152,18 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File tests\run-tests.ps1
 3. 触发方式（任一）：
 
    - 启动/重启 LabVIEW，观察启动阶段内部告警被自动关闭；
-   - 用 labview-mcp 运行会弹 `One Button Dialog` 的 VI，或调用
-     `lvai_validate_aixml backend="grpc"` 触发内部告警；
+   - 用 labview-mcp 运行本仓库 `tests/real-labview/LvaiDialogProbe.vi`（由
+     `tests/real-labview/OneButtonDialog.xml` 生成），守护配置开启 `enableKeyboardFallback`；
    - 用 `tests\LabVIEWDialogFixture.exe --messagebox` 模拟。
+
+   运行真实 VI 的 MCP 调用：
+
+   ```text
+   lvai_run_vi_as_top_level backend="pylabview" viPath="<repo>\tests\real-labview\LvaiDialogProbe.vi"
+   ```
+
+   预期 MCP 调用先阻塞，守护日志出现 `LVDChild` 检测、`Enter(foreground)`、`对话框已关闭`，
+   随后调用返回 `ok:true, finished:true`。
 
 4. 验证：
 
@@ -139,7 +175,8 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File tests\run-tests.ps1
 
 - 守护进程与目标进程必须同或更高完整性；Low 完整性目录（如某些沙箱工作区）里的 exe 会失效。
 - `WM_CLOSE` 默认关闭，只有显式开启才作为最后兜底；即使开启也可能让调用方拿到“被取消/被中止”。
-- 无按钮自绘窗口的 Enter 兜底默认关闭；开启后双按钮框会走默认按钮。
+- 无按钮自绘窗口的 Enter 兜底默认关闭；需要时在配置里开启 `enableKeyboardFallback`。
+  已用真实 `One Button Dialog` + MCP 调用验证：开启后第一次 Enter 即可关闭并让调用返回（见 3.2）。
 - 不处理崩溃转储、Windows 错误报告、UAC 提权框、其他会话窗口。
 - 标准 `#32770` 默认只处理 owner 被禁用 / 错误语义 / 单按钮三种情况，普通多按钮 OK 框不处理。
 - 轮询延迟约一个扫描周期。

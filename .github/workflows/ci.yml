@@ -25,8 +25,13 @@ jobs:
       - name: 扫描冒烟
         shell: pwsh
         run: |
-          ./dist/LabVIEWDialogWatchdog.exe --scan --json --out "$env:RUNNER_TEMP\scan.json"
-          Get-Content "$env:RUNNER_TEMP\scan.json" -Raw
+          $out = "$env:RUNNER_TEMP\scan.json"
+          ./dist/LabVIEWDialogWatchdog.exe --scan --json --out $out
+          $deadline = (Get-Date).AddSeconds(10)
+          while (-not (Test-Path -LiteralPath $out) -and (Get-Date) -lt $deadline) {
+            Start-Sleep -Milliseconds 200
+          }
+          Get-Content -LiteralPath $out -Raw
 
       - uses: actions/upload-artifact@v4
         with:

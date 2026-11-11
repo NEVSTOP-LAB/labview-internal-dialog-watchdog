@@ -1,0 +1,164 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Web.Script.Serialization;
+
+namespace LabVIEWDialogWatchdog
+{
+    /// <summary>配置模型与默认值。字段名与 JSON 键一一对应（camelCase）。</summary>
+    public sealed class WatchdogSettings
+    {
+        /// <summary>要监控的进程名（不含 .exe），默认 LabVIEW。</summary>
+        public string[] targetProcessNames = { "LabVIEW" };
+
+        /// <summary>额外允许的对话框窗口类名；#32770 始终按标准对话框处理。</summary>
+        public string[] dialogWindowClasses = { };
+
+        /// <summary>视为“确认/继续”的按钮文本。</summary>
+        public string[] confirmButtonTexts = { "OK", "确定", "Continue", "继续", "Close", "关闭" };
+
+        /// <summary>永不点击的按钮文本。</summary>
+        public string[] excludeButtonTexts = { "Cancel", "取消", "Stop", "停止", "Abort", "放弃", "No", "否" };
+
+        /// <summary>标题命中这些片段的对话框不处理（用于避开保存/覆盖等危险确认）。</summary>
+        public string[] excludeDialogTitlePatterns = { };
+
+        /// <summary>可以在没有原生按钮时按 Enter / WM_CLOSE 兜底的窗口类（LabVIEW 自绘对话框）。</summary>
+        public string[] keyboardFallbackWindowClasses = { "LVDChild" };
+
+        /// <summary>没有原生按钮时，首次按 Enter 前的等待（毫秒），避免误触瞬时进度框。</summary>
+        public int keyboardFallbackDelayMs = 800;
+
+        /// <summary>是否启用无按钮时的键盘兜底。</summary>
+        public bool enableKeyboardFallback = true;
+
+        /// <summary>扫描间隔（毫秒）。</summary>
+        public int pollIntervalMs = 500;
+
+        /// <summary>同一对话框至少连续出现多少次才点击，避免误触瞬时窗口。</summary>
+        public int minSeenCount = 1;
+
+        /// <summary>同一对话框最多尝试点击次数。</summary>
+        public int maxClickAttempts = 3;
+
+        /// <summary>两次点击尝试之间的等待（毫秒）。</summary>
+        public int clickRetryDelayMs = 900;
+
+        /// <summary>启动后立即暂停监控。</summary>
+        public bool startPaused = false;
+
+        /// <summary>点击成功后弹出托盘气泡。</summary>
+        public bool showNotifications = true;
+
+        /// <summary>只记录不点击，用于观察。</summary>
+        public bool dryRun = false;
+
+        /// <summary>日志目录（相对 exe 所在目录或绝对路径）。</summary>
+        public string logDirectory = "logs";
+
+        public static string DefaultPath
+        {
+            get { return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "LabVIEWDialogWatchdog.json"); }
+        }
+
+        public static WatchdogSettings Load(string path, out string warning)
+        {
+            warning = null;
+            if (string.IsNullOrEmpty(path) || !File.Exists(path))
+            {
+                return new WatchdogSettings();
+            }
+
+            try
+            {
+                string json = File.ReadAllText(path);
+                var serializer = new JavaScriptSerializer();
+                var settings = serializer.Deserialize<WatchdogSettings>(json) ?? new WatchdogSettings();
+                settings.Normalize(out warning);
+                return settings;
+            }
+            catch (Exception ex)
+            {
+                warning = "读取配置失败，使用默认配置：" + ex.Message;
+                return new WatchdogSettings();
+            }
+        }
+
+        public void Normalize(out string warning)
+        {
+            warning = null;
+            if (targetProcessNames == null || targetProcessNames.Length == 0)
+            {
+                targetProcessNames = new[] { "LabVIEW" };
+            }
+            if (confirmButtonTexts == null || confirmButtonTexts.Length == 0)
+            {
+                confirmButtonTexts = new[] { "OK", "确定" };
+            }
+            if (excludeButtonTexts == null) excludeButtonTexts = new string[0];
+            if (dialogWindowClasses == null) dialogWindowClasses = new string[0];
+            if (excludeDialogTitlePatterns == null) excludeDialogTitlePatterns = new string[0];
+            if (keyboardFallbackWindowClasses == null || keyboardFallbackWindowClasses.Length == 0)
+            {
+                keyboardFallbackWindowClasses = new[] { "LVDChild" };
+            }
+            if (keyboardFallbackDelayMs < 0) keyboardFallbackDelayMs = 0;
+            if (keyboardFallbackDelayMs > 10000) keyboardFallbackDelayMs = 10000;
+            if (pollIntervalMs < 100) pollIntervalMs = 100;
+            if (pollIntervalMs > 5000) pollIntervalMs = 5000;
+            if (minSeenCount < 1) minSeenCount = 1;
+            if (minSeenCount > 10) minSeenCount = 10;
+            if (maxClickAttempts < 1) maxClickAttempts = 1;
+            if (maxClickAttempts > 10) maxClickAttempts = 10;
+            if (clickRetryDelayMs < 100) clickRetryDelayMs = 100;
+            if (clickRetryDelayMs > 10000) clickRetryDelayMs = 10000;
+            if (string.IsNullOrWhiteSpace(logDirectory)) logDirectory = "logs";
+        }
+
+        public string ResolveLogDirectory()
+        {
+            if (Path.IsPathRooted(logDirectory))
+            {
+                return logDirectory;
+            }
+            return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, logDirectory);
+        }
+
+        /// <summary>写出一份带注释（README 说明）的默认配置文本。</summary>
+        public static string DefaultJson()
+        {
+            return
+@"{
+  // 要监控的进程名（不含 .exe）。默认 LabVIEW。
+  ""targetProcessNames"": [""LabVIEW""],
+  // 额外当作对话框的窗口类名；#32770 永远按标准对话框处理。
+  ""dialogWindowClasses"": [],
+  // 视为“确认/继续”的按钮文本。
+  ""confirmButtonTexts"": [""OK"", ""确定"", ""Continue"", ""继续"", ""Close"", ""关闭""],
+  // 永不点击的按钮文本。
+  ""excludeButtonTexts"": [""Cancel"", ""取消"", ""Stop"", ""停止"", ""Abort"", ""放弃"", ""No"", ""否""],
+  // 标题命中这些片段的对话框不处理（例如保存/覆盖提示）。
+  ""excludeDialogTitlePatterns"": [],
+  // 没有原生按钮时可按 Enter 兜底的窗口类（LabVIEW 自绘对话框）。
+  ""keyboardFallbackWindowClasses"": [""LVDChild""],
+  // 首次按 Enter 前的等待（毫秒）。
+  ""keyboardFallbackDelayMs"": 800,
+  ""enableKeyboardFallback"": true,
+  // 扫描间隔（毫秒）。
+  ""pollIntervalMs"": 500,
+  // 同一对话框至少连续出现多少次才点击。
+  ""minSeenCount"": 1,
+  // 同一对话框最多尝试点击次数。
+  ""maxClickAttempts"": 3,
+  // 两次点击尝试之间的等待（毫秒）。
+  ""clickRetryDelayMs"": 900,
+  ""startPaused"": false,
+  ""showNotifications"": true,
+  // true 时只记录、不点击。
+  ""dryRun"": false,
+  ""logDirectory"": ""logs""
+}
+";
+        }
+    }
+}

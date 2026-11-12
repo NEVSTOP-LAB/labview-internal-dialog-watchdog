@@ -159,7 +159,8 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File tests\run-tests.ps1
 - 配置解析、按钮精确匹配、internal error 识别等单元测试
 
 真实 LabVIEW 验证记录见 [docs/verification.md](docs/verification.md)：包括 12+6 个真实内部告警自动关闭，
-以及 `One Button Dialog` 阻塞 MCP 调用、守护按 Enter 后调用原样返回的完整闭环。CI 只跑构建、单元测试与扫描冒烟，
+以及 `One Button Dialog` 阻塞 MCP 调用、守护按 Enter 后调用原样返回的完整闭环。设计思路、关键决策与实现细节见
+[docs/design.md](docs/design.md)。CI 只跑构建、单元测试与扫描冒烟，
 GUI 端到端测试需在交互桌面本地运行（CI 另有一个 e2e job 跑夹具）。
 
 ## 排障

@@ -174,11 +174,7 @@ namespace LabVIEWDialogWatchdog
                     title = dialog.Title,
                     text = dialog.Text,
                     button = dialog.ButtonText,
-                    buttonId = dialog.ButtonId,
-                    buttonSource = dialog.ButtonSource,
-                    internalError = dialog.InternalError,
-                    standardDialog = dialog.IsStandardDialog,
-                    ownerDisabled = dialog.OwnerDisabled
+                    buttonId = dialog.ButtonId
                 });
             }
 

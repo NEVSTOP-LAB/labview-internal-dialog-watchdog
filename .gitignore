@@ -18,3 +18,6 @@ TestResults/
 # OS
 Thumbs.db
 desktop.ini
+
+# test artifacts
+artifacts/

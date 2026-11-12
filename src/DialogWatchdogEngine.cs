@@ -10,34 +10,27 @@ namespace LabVIEWDialogWatchdog
         public int Attempts { get; set; }
     }
 
-    /// <summary>轮询扫描并点击确认按钮。所有状态以 UI 窗口句柄为键。</summary>
+    /// <summary>
+    /// 轮询识别 Internal Warning/Error 对话框；出现后等待 clickDelaySeconds 秒，
+    /// 仍存在则自动点击确认。其他对话框不处理。
+    /// </summary>
     public sealed class DialogWatchdogEngine
     {
         private sealed class DialogState
         {
-            public int Seen;
             public int Attempts;
             public DateTime NextAttemptUtc;
             public DateTime VerifyAtUtc;
             public DateTime LastSeenUtc;
-            public bool Completed;
             public bool GaveUp;
-            public bool GraceApplied;
+            public bool DelayLogged;
             public bool DryRunLogged;
-            public bool UserHandled;
             public DialogInfo LastInfo;
-        }
-
-        internal struct ForegroundSample
-        {
-            public DateTime At;
-            public int Pid;
         }
 
         private readonly WatchdogSettings _settings;
         private readonly Log _log;
         private readonly Dictionary<IntPtr, DialogState> _states = new Dictionary<IntPtr, DialogState>();
-        private readonly List<ForegroundSample> _foregroundHistory = new List<ForegroundSample>();
 
         public DialogWatchdogEngine(WatchdogSettings settings, Log log)
         {
@@ -51,12 +44,10 @@ namespace LabVIEWDialogWatchdog
         public int DismissedCount { get; private set; }
         public int FailedCount { get; private set; }
         public int ClickSendFailures { get; private set; }
-        public int UserSkippedCount { get; private set; }
 
         public event EventHandler<DialogDismissedEventArgs> Dismissed;
         public event EventHandler<DialogInfo> Detected;
 
-        /// <summary>执行一次扫描；返回本次看到的候选对话框。</summary>
         public List<DialogInfo> Tick()
         {
             if (Paused)
@@ -81,51 +72,37 @@ namespace LabVIEWDialogWatchdog
                 DialogState state;
                 if (_states.TryGetValue(dialog.Handle, out state) && !SameIdentity(state.LastInfo, dialog))
                 {
-                    // 窗口句柄被复用成另一个对话框：重置状态，避免新对话框被旧状态跳过。
                     _states.Remove(dialog.Handle);
                     state = null;
                 }
                 if (state == null)
                 {
-                    bool targetRecentlyForeground = WasForegroundRecently(dialog.ProcessId, now);
-                    bool userOperating = UserActivityGuard.ShouldSkip(
-                        _settings.userActivityGuard,
-                        UserActivityGuard.GetIdleMilliseconds(),
-                        _settings.userActivityIdleMs,
-                        targetRecentlyForeground);
-                    state = new DialogState
-                    {
-                        LastSeenUtc = now,
-                        LastInfo = dialog,
-                        UserHandled = userOperating
-                    };
+                    state = new DialogState { LastSeenUtc = now, LastInfo = dialog };
                     _states[dialog.Handle] = state;
-                    if (userOperating)
+                    DetectedCount++;
+                    _log.Info(Describe("检测到 Internal Warning 对话框", dialog));
+                    EventHandler<DialogInfo> detected = Detected;
+                    if (detected != null)
                     {
-                        // 对话框出现时用户正在操作 LabVIEW：整个生命周期都不自动点，留给用户。
-                        UserSkippedCount++;
-                        _log.Info("检测到用户正在操作 LabVIEW，跳过自动点击：" + Describe(string.Empty, dialog));
-                    }
-                    else
-                    {
-                        DetectedCount++;
-                        _log.Info(Describe("检测到阻塞对话框", dialog));
-                        EventHandler<DialogInfo> detected = Detected;
-                        if (detected != null)
-                        {
-                            detected(this, dialog);
-                        }
+                        detected(this, dialog);
                     }
                 }
 
                 state.LastSeenUtc = now;
                 state.LastInfo = dialog;
-                if (state.Completed || state.UserHandled)
+
+                // 出现后先等 N 秒；期间窗口消失就不动作。
+                if (state.Attempts == 0 && !state.DelayLogged && _settings.clickDelaySeconds > 0)
                 {
+                    state.DelayLogged = true;
+                    state.NextAttemptUtc = now.AddSeconds(_settings.clickDelaySeconds);
+                    _log.Info(string.Format(
+                        "等待 {0} 秒后自动点击：{1}",
+                        _settings.clickDelaySeconds,
+                        Describe(string.Empty, dialog)));
                     continue;
                 }
-                state.Seen++;
-                if (state.Seen < _settings.minSeenCount || now < state.NextAttemptUtc)
+                if (now < state.NextAttemptUtc)
                 {
                     continue;
                 }
@@ -135,7 +112,7 @@ namespace LabVIEWDialogWatchdog
                     if (!state.DryRunLogged)
                     {
                         state.DryRunLogged = true;
-                        _log.Info("[dry-run] 检测到，将点击 " + Describe(string.Empty, dialog));
+                        _log.Info("[dry-run] 将点击 " + Describe(string.Empty, dialog));
                     }
                     state.NextAttemptUtc = now.AddSeconds(2);
                     continue;
@@ -147,24 +124,8 @@ namespace LabVIEWDialogWatchdog
                     {
                         state.GaveUp = true;
                         FailedCount++;
-                        _log.Warn("多次尝试后对话框仍未关闭，停止点击（若同权限仍失败，可能是 UIPI/完整性拒绝）："
-                                  + Describe(string.Empty, dialog));
+                        _log.Warn("多次尝试后对话框仍未关闭，停止点击：" + Describe(string.Empty, dialog));
                     }
-                    continue;
-                }
-
-                // 值守窗口：对话框出现后先等 clickDelayMs，有人值守通常会在这段时间自己点掉。
-                // 不消耗尝试次数，保证窗口结束后第一次动作就是正常点击。
-                if (state.Attempts == 0
-                    && !state.GraceApplied
-                    && _settings.clickDelayMs > 0)
-                {
-                    state.GraceApplied = true;
-                    state.NextAttemptUtc = now.AddMilliseconds(_settings.clickDelayMs);
-                    _log.Info(string.Format(
-                        "检测到对话框，等待 {0}ms 观察是否有人值守处理：{1}",
-                        _settings.clickDelayMs,
-                        Describe(string.Empty, dialog)));
                     continue;
                 }
 
@@ -173,7 +134,7 @@ namespace LabVIEWDialogWatchdog
                 state.NextAttemptUtc = now.AddMilliseconds(_settings.clickRetryDelayMs);
 
                 string method;
-                bool sent = DialogClicker.Click(dialog, state.Attempts, _settings, out method);
+                bool sent = DialogClicker.Click(dialog, state.Attempts, out method);
                 if (sent)
                 {
                     _log.Info(string.Format(
@@ -193,17 +154,14 @@ namespace LabVIEWDialogWatchdog
                 }
             }
 
-            // 点击后确认窗口是否真的消失；成功即移除状态，避免句柄复用时串台。
             foreach (KeyValuePair<IntPtr, DialogState> pair in _states.ToList())
             {
                 IntPtr handle = pair.Key;
                 DialogState state = pair.Value;
-
                 if (!Native.IsWindow(handle))
                 {
                     if (state.Attempts > 0 && now >= state.VerifyAtUtc)
                     {
-                        state.Completed = true;
                         DismissedCount++;
                         _log.Info(Describe("对话框已关闭", state.LastInfo));
                         EventHandler<DialogDismissedEventArgs> handler = Dismissed;
@@ -230,41 +188,7 @@ namespace LabVIEWDialogWatchdog
                 }
             }
 
-            // 采样放在扫描之后：记录的是“下一轮扫描看到对话框之前”的前台窗口。
-            RecordForeground(now);
             return dialogs;
-        }
-
-        private bool WasForegroundRecently(uint processId, DateTime now)
-        {
-            return HasRecentForeground(_foregroundHistory, processId, now, _settings.userActivityWindowMs);
-        }
-
-        internal static bool HasRecentForeground(
-            IEnumerable<ForegroundSample> history, uint processId, DateTime now, int windowMs)
-        {
-            foreach (ForegroundSample sample in history)
-            {
-                if (sample.Pid == (int)processId &&
-                    (now - sample.At).TotalMilliseconds <= windowMs)
-                {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        private void RecordForeground(DateTime now)
-        {
-            _foregroundHistory.Add(new ForegroundSample
-            {
-                At = now,
-                Pid = UserActivityGuard.GetForegroundProcessId()
-            });
-
-            int keepMs = Math.Max(8000, _settings.userActivityWindowMs + 2000);
-            DateTime cutoff = now.AddMilliseconds(-keepMs);
-            _foregroundHistory.RemoveAll(sample => sample.At < cutoff);
         }
 
         private static bool SameIdentity(DialogInfo left, DialogInfo right)
@@ -283,16 +207,13 @@ namespace LabVIEWDialogWatchdog
         {
             string head = string.IsNullOrEmpty(prefix) ? string.Empty : prefix + "：";
             return string.Format(
-                "{0}pid={1} process={2} class={3} title='{4}' button='{5}' source={6} internalError={7} ownerDisabled={8} text='{9}'",
+                "{0}pid={1} process={2} class={3} title='{4}' button='{5}' text='{6}'",
                 head,
                 dialog.ProcessId,
                 dialog.ProcessName,
                 dialog.ClassName,
                 dialog.Title,
                 dialog.ButtonText,
-                dialog.ButtonSource,
-                dialog.InternalError,
-                dialog.OwnerDisabled,
                 Shorten(dialog.Text, 240));
         }
 

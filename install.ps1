@@ -31,18 +31,12 @@ try {
 $config = Join-Path $InstallDir 'LabVIEWDialogWatchdog.json'
 if (-not (Test-Path -LiteralPath $config)) {
     @{
-        targetProcessNames   = @('LabVIEW')
-        logDirectory         = (Join-Path $InstallDir 'logs')
-        pollIntervalMs       = 300
-        minSeenCount         = 2
-        enableKeyboardFallback = $false
-        enableWindowCloseFallback = $false
-        clickDelayMs         = 5000
-        userActivityGuard    = $true
-        userActivityIdleMs   = 2000
-        userActivityWindowMs = 3000
-        showNotifications    = $true
-        dryRun               = $false
+        targetProcessNames = @('LabVIEW')
+        logDirectory       = (Join-Path $InstallDir 'logs')
+        pollIntervalMs     = 300
+        clickDelaySeconds  = 5
+        showNotifications  = $true
+        dryRun             = $false
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $config -Encoding utf8
 }
 

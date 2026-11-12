@@ -3,10 +3,10 @@ using System.Windows.Automation;
 
 namespace LabVIEWDialogWatchdog
 {
-    /// <summary>把“点击确认”的分层策略集中起来：越靠后越保守。</summary>
+    /// <summary>对已识别的 Internal Warning 对话框执行确认点击。</summary>
     public static class DialogClicker
     {
-        public static bool Click(DialogInfo dialog, int attempt, WatchdogSettings settings, out string method)
+        public static bool Click(DialogInfo dialog, int attempt, out string method)
         {
             method = string.Empty;
             if (dialog == null || !Native.IsWindow(dialog.Handle))
@@ -15,25 +15,25 @@ namespace LabVIEWDialogWatchdog
                 return false;
             }
 
-            if (string.Equals(dialog.ButtonSource, "keyboard", StringComparison.OrdinalIgnoreCase))
-            {
-                return ClickKeyboard(dialog, attempt, settings, out method);
-            }
-
             IntPtr button = dialog.ButtonHandle;
             bool hasButton = button != IntPtr.Zero && Native.IsWindow(button) && Native.IsWindowEnabled(button);
-
-            if (hasButton && attempt <= 2)
+            if (!hasButton)
             {
-                if (attempt == 1)
-                {
-                    // 异步点击，避免 LabVIEW UI 线程卡住时拖住守护进程。
-                    bool posted = Native.PostMessage(button, Native.BM_CLICK, IntPtr.Zero, IntPtr.Zero);
-                    method = posted ? "BM_CLICK(post)" : "BM_CLICK(post) failed";
-                    return posted;
-                }
+                method = "skipped: no button";
+                return false;
+            }
 
-                // WinForms / 自绘按钮常常忽略 BM_CLICK，先用 UI Automation 的 Invoke。
+            if (attempt == 1)
+            {
+                // 异步点击，避免对话框线程卡住时拖住守护。
+                bool posted = Native.PostMessage(button, Native.BM_CLICK, IntPtr.Zero, IntPtr.Zero);
+                method = posted ? "BM_CLICK(post)" : "BM_CLICK(post) failed";
+                return posted;
+            }
+
+            if (attempt == 2)
+            {
+                // WinForms/自绘按钮常忽略 BM_CLICK，先试 UI Automation。
                 if (TryInvokeAutomation(dialog.Handle, dialog.ButtonText))
                 {
                     method = "UIA Invoke";
@@ -48,7 +48,7 @@ namespace LabVIEWDialogWatchdog
                 return sent != IntPtr.Zero;
             }
 
-            // 兜底：向对话框发匹配按钮的 ID（没有 ID 时退回 IDOK），再回车触发默认按钮。
+            // 最后：向对话框发已匹配按钮的控件 ID，必要时再回车。
             IntPtr commandId = dialog.ButtonId > 0 ? (IntPtr)dialog.ButtonId : (IntPtr)Native.IDOK;
             bool commandPosted = Native.PostMessage(dialog.Handle, Native.WM_COMMAND, commandId, button);
             bool keyPosted = false;
@@ -59,41 +59,6 @@ namespace LabVIEWDialogWatchdog
             }
             method = "WM_COMMAND(" + commandId + ")+Enter";
             return commandPosted || keyPosted;
-        }
-
-        /// <summary>
-        /// LabVIEW 自绘对话框（如 One Button Dialog）没有可枚举的按钮：
-        /// 先激活窗口再发 Enter；仍不关闭则发 IDOK+Enter；WM_CLOSE 必须显式开启。
-        /// </summary>
-        private static bool ClickKeyboard(DialogInfo dialog, int attempt, WatchdogSettings settings, out string method)
-        {
-            if (attempt <= 1)
-            {
-                Native.SetForegroundWindow(dialog.Handle);
-                System.Threading.Thread.Sleep(80);
-                bool down = Native.PostMessage(dialog.Handle, Native.WM_KEYDOWN, (IntPtr)Native.VK_RETURN, IntPtr.Zero);
-                bool up = Native.PostMessage(dialog.Handle, Native.WM_KEYUP, (IntPtr)Native.VK_RETURN, IntPtr.Zero);
-                method = "Enter(foreground)";
-                return down && up;
-            }
-            if (attempt == 2)
-            {
-                bool command = Native.PostMessage(dialog.Handle, Native.WM_COMMAND, (IntPtr)Native.IDOK, IntPtr.Zero);
-                bool down = Native.PostMessage(dialog.Handle, Native.WM_KEYDOWN, (IntPtr)Native.VK_RETURN, IntPtr.Zero);
-                bool up = Native.PostMessage(dialog.Handle, Native.WM_KEYUP, (IntPtr)Native.VK_RETURN, IntPtr.Zero);
-                method = "WM_COMMAND(IDOK)+Enter";
-                return command && down && up;
-            }
-
-            if (settings.enableWindowCloseFallback)
-            {
-                bool closed = Native.PostMessage(dialog.Handle, Native.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
-                method = "WM_CLOSE(opt-in)";
-                return closed;
-            }
-
-            method = "give-up (enableWindowCloseFallback=false)";
-            return false;
         }
 
         /// <summary>通过 UI Automation 找到名为 buttonText 的按钮并 Invoke。</summary>
@@ -111,7 +76,6 @@ namespace LabVIEWDialogWatchdog
                     TreeScope.Descendants,
                     new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button));
                 string wanted = Normalize(buttonText);
-                AutomationElement fallback = null;
                 foreach (AutomationElement button in buttons)
                 {
                     string name;
@@ -146,25 +110,11 @@ namespace LabVIEWDialogWatchdog
                             }
                         }
                     }
-                    if (fallback == null && (normalized == "确定" || normalized == "OK"))
-                    {
-                        fallback = button;
-                    }
-                }
-
-                if (fallback != null)
-                {
-                    object pattern;
-                    if (fallback.TryGetCurrentPattern(InvokePattern.Pattern, out pattern))
-                    {
-                        ((InvokePattern)pattern).Invoke();
-                        return true;
-                    }
                 }
             }
             catch
             {
-                // UI Automation 失败不抛给调用方，交给下一层兜底。
+                // UI Automation 失败交给下一层兜底。
             }
             return false;
         }

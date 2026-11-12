@@ -5,7 +5,7 @@ using System.Text;
 
 namespace LabVIEWDialogWatchdog
 {
-    /// <summary>一个被识别为“阻塞对话框”的窗口及其确认按钮。</summary>
+    /// <summary>一个 LabVIEW Internal Warning/Error 对话框及其确认按钮。</summary>
     public sealed class DialogInfo
     {
         public IntPtr Handle;
@@ -17,13 +17,9 @@ namespace LabVIEWDialogWatchdog
         public IntPtr ButtonHandle;
         public string ButtonText;
         public int ButtonId;
-        public string ButtonSource;
-        public bool InternalError;
-        public bool IsStandardDialog;
-        public bool OwnerDisabled;
     }
 
-    /// <summary>按 PID 取 exe 名称；进程枚举被限制的环境下也能工作。</summary>
+    /// <summary>按 PID 取 exe 名称；进程枚举受限时也能工作。</summary>
     internal static class ProcessNameCache
     {
         private sealed class Entry
@@ -92,26 +88,23 @@ namespace LabVIEWDialogWatchdog
         }
     }
 
-    /// <summary>枚举顶层窗口，筛出目标进程中带确认按钮（或可键盘确认）的模态对话框。</summary>
+    /// <summary>
+    /// 只识别目标进程中窗口类为 #32770、文本包含 Internal Warning/Error 标记的对话框。
+    /// 其他对话框一律不处理。
+    /// </summary>
     public static class WindowScanner
     {
-        private static readonly string[] InternalErrorMarkers =
+        private static readonly HashSet<string> IgnoredClasses = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "internal error", "internal error occurred", "internal warning",
-            "内部错误", "内部警告", "unexpected error"
+            "tooltips_class32", "#32768", "ComboLBox", "SysShadow", "IME", "MSCTFIME UI",
+            "GDI+ Hook Window Class", "OleDdeWndClass", "OleAutomationWnd", "DDEMLEvent",
+            "DDEMLMom", "LVWinSessionMonitor"
         };
 
         private static readonly string[] DangerousButtonWords =
         {
             "保存", "不保存", "覆盖", "删除", "重命名",
             "Save", "Overwrite", "Delete", "Rename"
-        };
-
-        private static readonly HashSet<string> IgnoredClasses = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "tooltips_class32", "#32768", "ComboLBox", "SysShadow", "IME", "MSCTFIME UI",
-            "GDI+ Hook Window Class", "OleDdeWndClass", "OleAutomationWnd", "DDEMLEvent",
-            "DDEMLMom", "LVWinSessionMonitor"
         };
 
         public static List<DialogInfo> FindDialogs(WatchdogSettings settings)
@@ -142,14 +135,18 @@ namespace LabVIEWDialogWatchdog
                 }
 
                 string className = Native.GetClassNameSafe(hWnd);
-                if (IgnoredClasses.Contains(className))
+                if (!string.Equals(className, "#32770", StringComparison.OrdinalIgnoreCase) ||
+                    IgnoredClasses.Contains(className))
                 {
                     return true;
                 }
 
                 string processName = ProcessNameCache.Get(processId);
-                string title = Native.GetWindowTextSafe(hWnd, 512);
-                if (!IsTarget(processName, className, title, targets))
+                if (!IsTarget(processName, targets))
+                {
+                    return true;
+                }
+                if (!Native.IsWindowEnabled(hWnd))
                 {
                     return true;
                 }
@@ -160,66 +157,17 @@ namespace LabVIEWDialogWatchdog
                     return true;
                 }
 
-                IntPtr owner = Native.GetWindow(hWnd, Native.GW_OWNER);
-                int style = Native.GetWindowLong(hWnd, Native.GWL_STYLE);
-                bool owned = owner != IntPtr.Zero;
-                bool ownerDisabled = owned && !Native.IsWindowEnabled(owner);
-                bool standard = string.Equals(className, "#32770", StringComparison.OrdinalIgnoreCase);
-                bool dialogFrame = (style & Native.WS_DLGFRAME) != 0;
-
-                // 非标准对话框只接受“被已禁用的主窗口拥有的对话框”，避免误碰浮动面板。
-                bool customDialog = owned && dialogFrame && ownerDisabled;
-                bool configuredClass = ContainsClassName(settings.dialogWindowClasses, className);
-
-                if (!standard && !customDialog && !configuredClass)
-                {
-                    return true;
-                }
-                if (string.Equals(className, "LVFrame", StringComparison.OrdinalIgnoreCase) && !owned)
-                {
-                    return true;
-                }
-                if (!Native.IsWindowEnabled(hWnd))
-                {
-                    return true;
-                }
-                if (IsExcludedTitle(settings.excludeDialogTitlePatterns, title))
-                {
-                    return true;
-                }
-
+                string title = Native.GetWindowTextSafe(hWnd, 512);
                 string text = CollectDialogText(hWnd, title);
-                bool internalError = ContainsAny(text + " " + title, InternalErrorMarkers);
-
-                ButtonChoice native = FindNativeConfirmButton(hWnd, settings);
-
-                // 标准对话框不是天然模态：只有 owner 被禁用、带错误语义，或“只有一个按钮”
-                // 才按阻塞框处理；避免把普通属性/选择框里的 OK 误当成错误确认。
-                if (standard && !ownerDisabled && !internalError)
+                if (!ContainsAny(text + " " + title, settings.internalDialogMarkers))
                 {
-                    if (native == null || CountVisibleButtons(hWnd) != 1)
-                    {
-                        return true;
-                    }
+                    return true;
                 }
 
-                ButtonChoice button = native;
-                string source = "native";
+                ButtonChoice button = FindConfirmButton(hWnd, settings);
                 if (button == null)
                 {
-                    bool keyboardAllowed = settings.enableKeyboardFallback
-                                           && ContainsClassName(settings.keyboardFallbackWindowClasses, className)
-                                           && (customDialog || standard);
-                    if (!keyboardAllowed && standard && internalError)
-                    {
-                        keyboardAllowed = settings.enableKeyboardFallback;
-                    }
-                    if (!keyboardAllowed)
-                    {
-                        return true;
-                    }
-                    button = new ButtonChoice { Handle = IntPtr.Zero, Text = "(Enter)", Id = 0 };
-                    source = "keyboard";
+                    return true;
                 }
 
                 results.Add(new DialogInfo
@@ -232,16 +180,24 @@ namespace LabVIEWDialogWatchdog
                     Text = text,
                     ButtonHandle = button.Handle,
                     ButtonText = button.Text,
-                    ButtonId = button.Id,
-                    ButtonSource = source,
-                    InternalError = internalError,
-                    IsStandardDialog = standard,
-                    OwnerDisabled = ownerDisabled
+                    ButtonId = button.Id
                 });
                 return true;
             }, IntPtr.Zero);
 
             return results;
+        }
+
+        private static bool IsTarget(string processName, HashSet<string> targets)
+        {
+            return !string.IsNullOrEmpty(processName) && targets.Contains(processName);
+        }
+
+        private static string StripExeSuffix(string name)
+        {
+            return name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+                ? name.Substring(0, name.Length - 4)
+                : name;
         }
 
         private static bool IsOnScreen(Native.RECT rect)
@@ -255,89 +211,6 @@ namespace LabVIEWDialogWatchdog
             return rect.Right > left && rect.Left < right && rect.Bottom > top && rect.Top < bottom;
         }
 
-        private static int CountVisibleButtons(IntPtr dialog)
-        {
-            int count = 0;
-            Native.EnumChildWindows(dialog, delegate(IntPtr child, IntPtr lParam)
-            {
-                if (!Native.IsWindowVisible(child) || !Native.IsWindowEnabled(child))
-                {
-                    return true;
-                }
-                string className = Native.GetClassNameSafe(child);
-                if (string.Equals(className, "Button", StringComparison.OrdinalIgnoreCase) ||
-                    className.IndexOf("button", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    count++;
-                }
-                return true;
-            }, IntPtr.Zero);
-            return count;
-        }
-
-        private static bool IsTarget(string processName, string className, string title, HashSet<string> targets)
-        {
-            if (!string.IsNullOrEmpty(processName) && targets.Contains(processName))
-            {
-                return true;
-            }
-
-            // 进程名取不到（权限不足）时的保守兜底：只认 LabVIEW 自己的窗口类/标题。
-            if (string.IsNullOrEmpty(processName))
-            {
-                if (className.StartsWith("LV", StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
-                if (title.IndexOf("LabVIEW", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        private static string StripExeSuffix(string name)
-        {
-            return name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
-                ? name.Substring(0, name.Length - 4)
-                : name;
-        }
-
-        private static bool ContainsClassName(string[] classes, string className)
-        {
-            if (classes == null)
-            {
-                return false;
-            }
-            foreach (string candidate in classes)
-            {
-                if (!string.IsNullOrWhiteSpace(candidate) &&
-                    string.Equals(candidate.Trim(), className, StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        private static bool IsExcludedTitle(string[] patterns, string title)
-        {
-            if (patterns == null || string.IsNullOrEmpty(title))
-            {
-                return false;
-            }
-            foreach (string pattern in patterns)
-            {
-                if (!string.IsNullOrWhiteSpace(pattern) &&
-                    title.IndexOf(pattern.Trim(), StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    return true;
-                }
-            }
-            return false;
-        }
-
         private sealed class ButtonChoice
         {
             public IntPtr Handle;
@@ -345,7 +218,7 @@ namespace LabVIEWDialogWatchdog
             public int Id;
         }
 
-        private static ButtonChoice FindNativeConfirmButton(IntPtr dialog, WatchdogSettings settings)
+        private static ButtonChoice FindConfirmButton(IntPtr dialog, WatchdogSettings settings)
         {
             ButtonChoice best = null;
             int bestScore = 0;
@@ -381,7 +254,7 @@ namespace LabVIEWDialogWatchdog
                 int score = ScoreButton(text, settings.confirmButtonTexts);
                 if (score <= 0 && id == Native.IDOK && !ContainsAny(text, DangerousButtonWords))
                 {
-                    // IDOK 本身是确认语义；但“关闭而不保存”这类危险文本即使挂 IDOK 也不点。
+                    // IDOK 是确认语义；危险文本即使挂 IDOK 也不点。
                     score = 100;
                 }
                 if (score <= 0)
@@ -430,8 +303,7 @@ namespace LabVIEWDialogWatchdog
                 {
                     continue;
                 }
-                string candidate = NormalizeButtonText(exclude);
-                if (text.Equals(candidate, StringComparison.OrdinalIgnoreCase))
+                if (text.Equals(NormalizeButtonText(exclude), StringComparison.OrdinalIgnoreCase))
                 {
                     return true;
                 }
@@ -448,9 +320,7 @@ namespace LabVIEWDialogWatchdog
                 {
                     continue;
                 }
-                string candidate = NormalizeButtonText(confirm);
-                // 只做精确匹配：避免“关闭而不保存/Close without saving”命中“关闭/Close”。
-                if (text.Equals(candidate, StringComparison.OrdinalIgnoreCase))
+                if (text.Equals(NormalizeButtonText(confirm), StringComparison.OrdinalIgnoreCase))
                 {
                     best = Math.Max(best, 500);
                 }
@@ -488,9 +358,14 @@ namespace LabVIEWDialogWatchdog
 
         private static bool ContainsAny(string haystack, string[] needles)
         {
+            if (needles == null || string.IsNullOrEmpty(haystack))
+            {
+                return false;
+            }
             foreach (string needle in needles)
             {
-                if (haystack.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0)
+                if (!string.IsNullOrWhiteSpace(needle) &&
+                    haystack.IndexOf(needle.Trim(), StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     return true;
                 }
@@ -499,6 +374,16 @@ namespace LabVIEWDialogWatchdog
         }
 
         // 测试入口：与生产路径共用同一套判定。
+        internal static bool HasInternalMarker(string text, string[] markers)
+        {
+            return ContainsAny(text ?? string.Empty, markers);
+        }
+
+        internal static bool IsDangerousButtonText(string text)
+        {
+            return ContainsAny(text ?? string.Empty, DangerousButtonWords);
+        }
+
         internal static bool IsConfirmText(string text, string[] confirms)
         {
             return ScoreButton(NormalizeButtonText(text), confirms) > 0;
@@ -507,16 +392,6 @@ namespace LabVIEWDialogWatchdog
         internal static bool IsExcludedText(string text, string[] excludes)
         {
             return IsExcludedButton(excludes, NormalizeButtonText(text));
-        }
-
-        internal static bool HasInternalErrorText(string text)
-        {
-            return ContainsAny(text ?? string.Empty, InternalErrorMarkers);
-        }
-
-        internal static bool IsDangerousButtonText(string text)
-        {
-            return ContainsAny(text ?? string.Empty, DangerousButtonWords);
         }
     }
 }

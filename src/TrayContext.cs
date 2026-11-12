@@ -171,13 +171,12 @@ namespace LabVIEWDialogWatchdog
                     return;
                 }
 
-                string suffix = e.Dialog.InternalError ? "（internal warning）" : string.Empty;
                 string title = string.IsNullOrEmpty(e.Dialog.Title) ? "LabVIEW" : e.Dialog.Title;
                 if (title.Length > 40)
                 {
                     title = title.Substring(0, 40) + "…";
                 }
-                string message = string.Format("已点击“{0}”关闭对话框{1}：{2}", e.Dialog.ButtonText, suffix, title);
+                string message = string.Format("已点击“{0}”关闭对话框：{1}", e.Dialog.ButtonText, title);
                 _notifyIcon.ShowBalloonTip(3000, "LabVIEW 对话框守护", message, ToolTipIcon.Info);
             });
         }
@@ -186,10 +185,10 @@ namespace LabVIEWDialogWatchdog
         {
             string state = _engine.Paused ? "已暂停" : (_engine.DryRun ? "观察模式" : "监控中");
             _statusItem.Text = string.Format(
-                "状态：{0} · 已处理 {1} 次 · 用户跳过 {2} 次",
+                "状态：{0} · 已处理 {1} 次 · 失败 {2} 次",
                 state,
                 _engine.DismissedCount,
-                _engine.UserSkippedCount);
+                _engine.FailedCount + _engine.ClickSendFailures);
             _pauseItem.Text = _engine.Paused ? "恢复监控" : "暂停监控";
             _notifyIcon.Text = Truncate("LabVIEW 对话框守护 · " + state, 63);
         }

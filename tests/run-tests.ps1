@@ -1,7 +1,7 @@
 #Requires -Version 7
 <#
   构建 + 单元测试 + 端到端夹具测试（不需要 LabVIEW）。
-  端到端用 LabVIEWDialogFixture.exe 模拟模态对话框，验证扫描、点击与恢复。
+  只验证 Internal Warning 对话框：识别、n 秒延迟、自动点击；其他对话框不处理。
 #>
 param(
     [switch]$SkipBuild,
@@ -36,18 +36,6 @@ function Assert-Verdict([string]$Name, [bool]$Condition, [string]$Detail) {
     }
 }
 
-function Wait-ProcessExit {
-    param(
-        [Parameter(Mandatory = $true)]$Process,
-        [int]$TimeoutMs = 60000
-    )
-    if (-not $Process.WaitForExit($TimeoutMs)) {
-        Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
-        return -1
-    }
-    return $Process.ExitCode
-}
-
 function Quote-Arg([string]$Value) {
     if ($Value -match '\s') { return '"' + $Value + '"' }
     return $Value
@@ -57,6 +45,15 @@ function Start-Quoted([string]$FilePath, [string[]]$Arguments, [string]$Redirect
     $quoted = @($Arguments | ForEach-Object { Quote-Arg $_ })
     return Start-Process -FilePath $FilePath -ArgumentList $quoted -PassThru `
         -RedirectStandardOutput $RedirectOut -RedirectStandardError $RedirectErr
+}
+
+function Wait-ProcessExit {
+    param([Parameter(Mandatory = $true)]$Process, [int]$TimeoutMs = 60000)
+    if (-not $Process.WaitForExit($TimeoutMs)) {
+        Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
+        return -1
+    }
+    return $Process.ExitCode
 }
 
 function Invoke-WatchdogCli {
@@ -76,202 +73,147 @@ function Invoke-WatchdogCli {
     }
 }
 
+function New-TestConfig {
+    param([string]$Path, [string]$LogDir, [string]$Target = 'LabVIEWDialogFixture', [int]$DelaySeconds = 1)
+    New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
+    @{
+        targetProcessNames = @($Target)
+        logDirectory       = $LogDir
+        clickDelaySeconds  = $DelaySeconds
+        pollIntervalMs     = 200
+        showNotifications  = $false
+    } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $Path -Encoding utf8
+}
+
+function Get-LogTimestamp {
+    param([string]$LogPath, [string]$Pattern)
+    if (-not (Test-Path -LiteralPath $LogPath)) { return $null }
+    $line = Get-Content -LiteralPath $LogPath -Encoding UTF8 |
+        Where-Object { $_ -match $Pattern } | Select-Object -First 1
+    if (-not $line) { return $null }
+    $m = [regex]::Match($line, '^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})')
+    if (-not $m.Success) { return $null }
+    return [datetime]::ParseExact($m.Groups[1].Value, 'yyyy-MM-dd HH:mm:ss.fff', $null)
+}
+
 Write-Host '== 单元测试 =='
 $unitOut = Join-Path $TempDir 'unit.out'
 $unitErr = Join-Path $TempDir 'unit.err'
-$unitRun = Start-Quoted -FilePath $unitTests -Arguments @($TempDir) `
-    -RedirectOut $unitOut -RedirectErr $unitErr
+$unitRun = Start-Quoted -FilePath $unitTests -Arguments @($TempDir) -RedirectOut $unitOut -RedirectErr $unitErr
 $unitExit = Wait-ProcessExit -Process $unitRun -TimeoutMs 30000
 Assert-Verdict 'unit tests' ($unitExit -eq 0) "exit=$unitExit"
 
-function Invoke-DialogScenario {
-    param(
-        [Parameter(Mandatory = $true)][string]$Mode,
-        [Parameter(Mandatory = $true)][bool]$ExpectInternal,
-        [string]$Target = 'LabVIEWDialogFixture'
-    )
+Write-Host '== 端到端：Internal Warning 在 n 秒后自动点击 =='
+$config = Join-Path $TempDir 'config-internal.json'
+$logDir = Join-Path $TempDir 'logs-internal'
+$marker = Join-Path $TempDir 'closed-internal.txt'
+Remove-Item -LiteralPath $logDir -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue
+New-TestConfig -Path $config -LogDir $logDir -DelaySeconds 1
 
-    $slug = $Mode.TrimStart('-')
-    $config = Join-Path $TempDir "config-$slug.json"
-    $logDir = Join-Path $TempDir "logs-$slug"
-    $marker = Join-Path $TempDir "closed-$slug.txt"
-    Remove-Item -LiteralPath $logDir -Recurse -Force -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue
-    New-Item -ItemType Directory -Force -Path $logDir | Out-Null
-
-    @{
-        targetProcessNames = @($Target)
-        logDirectory       = $logDir
-        pollIntervalMs     = 200
-        minSeenCount       = 1
-        enableKeyboardFallback = $true
-        enableWindowCloseFallback = $false
-        maxClickAttempts   = 3
-        clickRetryDelayMs  = 500
-        clickDelayMs       = 0
-        showNotifications  = $false
-        userActivityGuard  = $false
-        confirmButtonTexts = @('OK', '确定', 'Continue', '继续', 'Close', '关闭')
-        excludeButtonTexts = @('Cancel', '取消', 'Stop', '停止', 'Abort', '放弃', 'No', '否')
-        keyboardFallbackWindowClasses = @('LVDChild', 'LVDChildWatchdogFixture')
-    } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $config -Encoding utf8
-
-    $fixtureOut = Join-Path $TempDir "fixture-$slug.out"
-    $fixtureErr = Join-Path $TempDir "fixture-$slug.err"
-    $dialogProcess = Start-Quoted -FilePath $fixture -Arguments @($Mode, $marker) `
-        -RedirectOut $fixtureOut -RedirectErr $fixtureErr
-    try {
-        $scanOut = Join-Path $TempDir "scan-$slug.json"
-        $items = @()
-        for ($attempt = 0; $attempt -lt 10; $attempt++) {
-            Start-Sleep -Milliseconds 400
-            $null = Invoke-WatchdogCli -Arguments @('--scan', '--json', '--config', $config, '--out', $scanOut) -Tag "scan-$slug"
-            if (Test-Path -LiteralPath $scanOut) {
-                $scanText = Get-Content -LiteralPath $scanOut -Raw -Encoding UTF8
-                $items = @($scanText | ConvertFrom-Json)
-                if ($items.Count -ge 1) { break }
-            }
-        }
-        Assert-Verdict "${slug}: 扫描到对话框" ($items.Count -ge 1) 'scan returned no dialog'
-        if ($items.Count -ge 1) {
-            Assert-Verdict "${slug}: 命中确认按钮" ($items[0].button -match '确定|OK|Enter') "button=$($items[0].button)"
-            Assert-Verdict "${slug}: internalError=$ExpectInternal" ($items[0].internalError -eq $ExpectInternal) "got=$($items[0].internalError)"
-        }
-
-        $watchOut = Join-Path $TempDir "watch-$slug.txt"
-        $watch = Invoke-WatchdogCli -Arguments @(
-            '--watch-seconds', '8', '--config', $config, '--require-dismissal', '--exit-after-dismiss', '--out', $watchOut
-        ) -Tag "watch-$slug"
-        $watchText = Get-Content -LiteralPath $watchOut -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
-        Assert-Verdict "${slug}: 守护进程正常结束" ($watch.ExitCode -eq 0) "exit=$($watch.ExitCode) $watchText"
-        Assert-Verdict "${slug}: 对话框被关闭" (Test-Path -LiteralPath $marker) '未看到关闭标记'
-        Assert-Verdict "${slug}: 日志记录点击" (((Get-Content -LiteralPath (Join-Path $logDir 'LabVIEWDialogWatchdog.log') -Raw -Encoding UTF8) -match '点击')) '日志缺少点击记录'
-    }
-    finally {
-        if (-not $dialogProcess.HasExited) {
-            Stop-Process -Id $dialogProcess.Id -Force -ErrorAction SilentlyContinue
-        }
-    }
-}
-
-Write-Host '== 端到端：Win32 MessageBox =='
-Invoke-DialogScenario -Mode '--messagebox' -ExpectInternal $false
-Write-Host '== 端到端：internal error 文案 =='
-Invoke-DialogScenario -Mode '--internal-error' -ExpectInternal $true
-Write-Host '== 端到端：非 #32770 模态框（UIA 兜底）=='
-Invoke-DialogScenario -Mode '--custom' -ExpectInternal $true
-Write-Host '== 端到端：LabVIEW 自绘对话框（无按钮，Enter 兜底）=='
-Invoke-DialogScenario -Mode '--labview-custom' -ExpectInternal $false
-
-Write-Host '== 安全用例：危险标题不处理 =='
-$dangerConfig = Join-Path $TempDir 'config-danger.json'
-$dangerLog = Join-Path $TempDir 'logs-danger'
-$dangerMarker = Join-Path $TempDir 'closed-danger.txt'
-New-Item -ItemType Directory -Force -Path $dangerLog | Out-Null
-Remove-Item -LiteralPath $dangerMarker -Force -ErrorAction SilentlyContinue
-@{
-    targetProcessNames = @('LabVIEWDialogFixture')
-    logDirectory       = $dangerLog
-    pollIntervalMs     = 200
-    showNotifications  = $false
-    userActivityGuard  = $false
-} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $dangerConfig -Encoding utf8
-$dangerProcess = Start-Quoted -FilePath $fixture -Arguments @('--danger', $dangerMarker) `
-    -RedirectOut (Join-Path $TempDir 'fixture-danger.out') -RedirectErr (Join-Path $TempDir 'fixture-danger.err')
+$fixtureProcess = Start-Quoted -FilePath $fixture -Arguments @('--internal-warning', $marker) `
+    -RedirectOut (Join-Path $TempDir 'fixture-internal.out') -RedirectErr (Join-Path $TempDir 'fixture-internal.err')
 try {
     Start-Sleep -Milliseconds 1200
-    $dangerOut = Join-Path $TempDir 'scan-danger.json'
-    $null = Invoke-WatchdogCli -Arguments @('--scan', '--json', '--config', $dangerConfig, '--out', $dangerOut) -Tag 'scan-danger'
-    $dangerText = Get-Content -LiteralPath $dangerOut -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
-    $dangerItems = @($dangerText | ConvertFrom-Json)
-    Assert-Verdict '危险标题（保存更改）不被识别' ($dangerItems.Count -eq 0) $dangerText
-    Assert-Verdict '危险标题对话框保持未关闭' (-not (Test-Path -LiteralPath $dangerMarker)) '不应点击保存类提示'
-} finally {
-    if (-not $dangerProcess.HasExited) {
-        Stop-Process -Id $dangerProcess.Id -Force -ErrorAction SilentlyContinue
+    $scanOut = Join-Path $TempDir 'scan-internal.json'
+    $scan = Invoke-WatchdogCli -Arguments @('--scan', '--json', '--config', $config, '--out', $scanOut) -Tag 'scan-internal'
+    $scanText = Get-Content -LiteralPath $scanOut -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
+    $items = @($scanText | ConvertFrom-Json)
+    Assert-Verdict '识别 Internal Warning 对话框' ($items.Count -eq 1) $scanText
+    if ($items.Count -eq 1) {
+        Assert-Verdict '命中确认按钮' ($items[0].button -match '确定|OK') "button=$($items[0].button)"
+        Assert-Verdict '文本包含 Internal Warning' ($items[0].text -match 'Internal Warning') "text=$($items[0].text)"
+    }
+
+    $watchOut = Join-Path $TempDir 'watch-internal.txt'
+    $watch = Invoke-WatchdogCli -Arguments @(
+        '--watch-seconds', '8', '--config', $config, '--require-dismissal', '--exit-after-dismiss', '--out', $watchOut
+    ) -Tag 'watch-internal'
+    Assert-Verdict '守护进程正常结束' ($watch.ExitCode -eq 0) "exit=$($watch.ExitCode)"
+    Assert-Verdict '对话框被自动关闭' (Test-Path -LiteralPath $marker) '未看到关闭标记'
+
+    $logPath = Join-Path $logDir 'LabVIEWDialogWatchdog.log'
+    $detectedAt = Get-LogTimestamp -LogPath $logPath -Pattern '检测到 Internal Warning'
+    $clickedAt = Get-LogTimestamp -LogPath $logPath -Pattern '第 1 次点击'
+    Assert-Verdict '日志记录检测与点击' ($null -ne $detectedAt -and $null -ne $clickedAt) '日志缺少检测/点击'
+    if ($null -ne $detectedAt -and $null -ne $clickedAt) {
+        $gapMs = ($clickedAt - $detectedAt).TotalMilliseconds
+        Assert-Verdict '延迟约 1 秒后点击' ($gapMs -ge 900 -and $gapMs -le 2500) "gap=$([int]$gapMs)ms"
+    }
+}
+finally {
+    if (-not $fixtureProcess.HasExited) {
+        Stop-Process -Id $fixtureProcess.Id -Force -ErrorAction SilentlyContinue
     }
 }
 
-Write-Host '== 安全用例：默认配置不处理无按钮自绘框 =='
-$defaultSafeConfig = Join-Path $TempDir 'config-default-safe.json'
-$defaultSafeLog = Join-Path $TempDir 'logs-default-safe'
-$defaultSafeMarker = Join-Path $TempDir 'closed-default-safe.txt'
-New-Item -ItemType Directory -Force -Path $defaultSafeLog | Out-Null
-Remove-Item -LiteralPath $defaultSafeMarker -Force -ErrorAction SilentlyContinue
-@{
-    targetProcessNames = @('LabVIEWDialogFixture')
-    logDirectory       = $defaultSafeLog
-    pollIntervalMs     = 200
-    minSeenCount       = 1
-    showNotifications  = $false
-    userActivityGuard  = $false
-} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $defaultSafeConfig -Encoding utf8
-$defaultSafeProcess = Start-Quoted -FilePath $fixture -Arguments @('--labview-custom', $defaultSafeMarker) `
-    -RedirectOut (Join-Path $TempDir 'fixture-default-safe.out') -RedirectErr (Join-Path $TempDir 'fixture-default-safe.err')
+Write-Host '== 反向：其他对话框不处理 =='
+$otherConfig = Join-Path $TempDir 'config-other.json'
+$otherLog = Join-Path $TempDir 'logs-other'
+$otherMarker = Join-Path $TempDir 'closed-other.txt'
+Remove-Item -LiteralPath $otherLog -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath $otherMarker -Force -ErrorAction SilentlyContinue
+New-TestConfig -Path $otherConfig -LogDir $otherLog -DelaySeconds 0
+$otherProcess = Start-Quoted -FilePath $fixture -Arguments @('--other', $otherMarker) `
+    -RedirectOut (Join-Path $TempDir 'fixture-other.out') -RedirectErr (Join-Path $TempDir 'fixture-other.err')
 try {
     Start-Sleep -Milliseconds 1200
-    $defaultSafeOut = Join-Path $TempDir 'scan-default-safe.json'
-    $null = Invoke-WatchdogCli -Arguments @('--scan', '--json', '--config', $defaultSafeConfig, '--out', $defaultSafeOut) -Tag 'scan-default-safe'
-    $defaultSafeText = Get-Content -LiteralPath $defaultSafeOut -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
-    $defaultSafeItems = @($defaultSafeText | ConvertFrom-Json)
-    Assert-Verdict '默认配置：无按钮自绘框不被识别' ($defaultSafeItems.Count -eq 0) $defaultSafeText
-} finally {
-    if (-not $defaultSafeProcess.HasExited) {
-        Stop-Process -Id $defaultSafeProcess.Id -Force -ErrorAction SilentlyContinue
+    $otherScan = Join-Path $TempDir 'scan-other.json'
+    $null = Invoke-WatchdogCli -Arguments @('--scan', '--json', '--config', $otherConfig, '--out', $otherScan) -Tag 'scan-other'
+    $otherText = Get-Content -LiteralPath $otherScan -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
+    $otherItems = @($otherText | ConvertFrom-Json)
+    Assert-Verdict '普通对话框不被识别' ($otherItems.Count -eq 0) $otherText
+
+    $null = Invoke-WatchdogCli -Arguments @('--watch-seconds', '2', '--config', $otherConfig) -Tag 'watch-other'
+    Assert-Verdict '普通对话框不被点击' (-not (Test-Path -LiteralPath $otherMarker)) '普通对话框被点击了'
+}
+finally {
+    if (-not $otherProcess.HasExited) {
+        Stop-Process -Id $otherProcess.Id -Force -ErrorAction SilentlyContinue
     }
 }
 
-Write-Host '== 安全用例：--dry-run 不点击 =='
-$dryConfig = Join-Path $TempDir 'config-dryrun.json'
-$dryLog = Join-Path $TempDir 'logs-dryrun'
-$dryMarker = Join-Path $TempDir 'closed-dryrun.txt'
-New-Item -ItemType Directory -Force -Path $dryLog | Out-Null
+Write-Host '== 安全：--dry-run 不点击 =='
+$dryConfig = Join-Path $TempDir 'config-dry.json'
+$dryLog = Join-Path $TempDir 'logs-dry'
+$dryMarker = Join-Path $TempDir 'closed-dry.txt'
+Remove-Item -LiteralPath $dryLog -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath $dryMarker -Force -ErrorAction SilentlyContinue
-@{
-    targetProcessNames = @('LabVIEWDialogFixture')
-    logDirectory       = $dryLog
-    pollIntervalMs     = 200
-    showNotifications  = $false
-    dryRun             = $true
-} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $dryConfig -Encoding utf8
-$dryProcess = Start-Process -FilePath $fixture -ArgumentList @('--messagebox', $dryMarker) -PassThru `
-    -RedirectStandardOutput (Join-Path $TempDir 'fixture-dryrun.out') -RedirectStandardError (Join-Path $TempDir 'fixture-dryrun.err')
+New-TestConfig -Path $dryConfig -LogDir $dryLog -DelaySeconds 0
+$dryProcess = Start-Quoted -FilePath $fixture -Arguments @('--internal-warning', $dryMarker) `
+    -RedirectOut (Join-Path $TempDir 'fixture-dry.out') -RedirectErr (Join-Path $TempDir 'fixture-dry.err')
 try {
     Start-Sleep -Milliseconds 1200
-    $null = Invoke-WatchdogCli -Arguments @('--watch-seconds', '2', '--config', $dryConfig) -Tag 'dryrun'
-    Assert-Verdict 'dry-run: 对话框保持未关闭' (-not (Test-Path -LiteralPath $dryMarker)) 'dry-run 不应点击'
-    Assert-Verdict 'dry-run: 日志说明将点击' (((Get-Content -LiteralPath (Join-Path $dryLog 'LabVIEWDialogWatchdog.log') -Raw -Encoding UTF8) -match 'dry-run')) '日志缺少 dry-run 记录'
-} finally {
+    $null = Invoke-WatchdogCli -Arguments @('--watch-seconds', '2', '--dry-run', '--config', $dryConfig) -Tag 'watch-dry'
+    Assert-Verdict 'dry-run 不点击' (-not (Test-Path -LiteralPath $dryMarker)) 'dry-run 点击了对话框'
+    Assert-Verdict 'dry-run 有日志' (((Get-Content -LiteralPath (Join-Path $dryLog 'LabVIEWDialogWatchdog.log') -Raw -Encoding UTF8) -match 'dry-run')) '日志缺少 dry-run'
+}
+finally {
     if (-not $dryProcess.HasExited) {
         Stop-Process -Id $dryProcess.Id -Force -ErrorAction SilentlyContinue
     }
 }
 
-Write-Host '== 反向用例：非目标进程不处理 =='
-$negativeConfig = Join-Path $TempDir 'config-negative.json'
-$negativeLog = Join-Path $TempDir 'logs-negative'
-New-Item -ItemType Directory -Force -Path $negativeLog | Out-Null
-@{
-    targetProcessNames = @('NotTheFixture')
-    logDirectory       = $negativeLog
-    pollIntervalMs     = 200
-    showNotifications  = $false
-    userActivityGuard  = $false
-} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $negativeConfig -Encoding utf8
-$negativeMarker = Join-Path $TempDir 'closed-negative.txt'
-Remove-Item -LiteralPath $negativeMarker -Force -ErrorAction SilentlyContinue
-$negativeProcess = Start-Process -FilePath $fixture -ArgumentList @('--messagebox', $negativeMarker) -PassThru `
-    -RedirectStandardOutput (Join-Path $TempDir 'fixture-negative.out') -RedirectStandardError (Join-Path $TempDir 'fixture-negative.err')
+Write-Host '== 反向：非目标进程不处理 =='
+$nonTargetConfig = Join-Path $TempDir 'config-nontarget.json'
+$nonTargetLog = Join-Path $TempDir 'logs-nontarget'
+$nonTargetMarker = Join-Path $TempDir 'closed-nontarget.txt'
+Remove-Item -LiteralPath $nonTargetLog -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath $nonTargetMarker -Force -ErrorAction SilentlyContinue
+New-TestConfig -Path $nonTargetConfig -LogDir $nonTargetLog -Target 'NotTheFixture' -DelaySeconds 0
+$nonTargetProcess = Start-Quoted -FilePath $fixture -Arguments @('--internal-warning', $nonTargetMarker) `
+    -RedirectOut (Join-Path $TempDir 'fixture-nontarget.out') -RedirectErr (Join-Path $TempDir 'fixture-nontarget.err')
 try {
     Start-Sleep -Milliseconds 1200
-    $negativeOut = Join-Path $TempDir 'scan-negative.json'
-    $null = Invoke-WatchdogCli -Arguments @('--scan', '--json', '--config', $negativeConfig, '--out', $negativeOut) -Tag 'scan-negative'
-    $negativeText = Get-Content -LiteralPath $negativeOut -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
-    $negativeItems = @($negativeText | ConvertFrom-Json)
-    Assert-Verdict '反向：非目标进程对话框不被识别' ($negativeItems.Count -eq 0) $negativeText
-} finally {
-    if (-not $negativeProcess.HasExited) {
-        Stop-Process -Id $negativeProcess.Id -Force -ErrorAction SilentlyContinue
+    $nonTargetScan = Join-Path $TempDir 'scan-nontarget.json'
+    $null = Invoke-WatchdogCli -Arguments @('--scan', '--json', '--config', $nonTargetConfig, '--out', $nonTargetScan) -Tag 'scan-nontarget'
+    $nonTargetText = Get-Content -LiteralPath $nonTargetScan -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
+    $nonTargetItems = @($nonTargetText | ConvertFrom-Json)
+    Assert-Verdict '非目标进程不被识别' ($nonTargetItems.Count -eq 0) $nonTargetText
+}
+finally {
+    if (-not $nonTargetProcess.HasExited) {
+        Stop-Process -Id $nonTargetProcess.Id -Force -ErrorAction SilentlyContinue
     }
 }
 
@@ -282,4 +224,3 @@ if ($script:failures -eq 0) {
 }
 Write-Host "FAILED: $script:failures / $script:total checks"
 exit 1
-

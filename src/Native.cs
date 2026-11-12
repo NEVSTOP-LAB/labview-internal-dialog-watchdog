@@ -4,7 +4,7 @@ using System.Text;
 
 namespace LabVIEWDialogWatchdog
 {
-    /// <summary>Win32 声明集中处。只保留守护进程用到的 API。</summary>
+    /// <summary>Win32 声明集中处。只保留“识别 Internal Warning 对话框并点击确认”用到的 API。</summary>
     internal static class Native
     {
         internal delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
@@ -34,10 +34,10 @@ namespace LabVIEWDialogWatchdog
         internal static extern bool IsWindow(IntPtr hWnd);
 
         [DllImport("user32.dll")]
-        internal static extern IntPtr GetWindow(IntPtr hWnd, uint command);
+        internal static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
 
-        [DllImport("user32.dll", EntryPoint = "GetWindowLongW")]
-        internal static extern int GetWindowLong(IntPtr hWnd, int index);
+        [DllImport("user32.dll")]
+        internal static extern int GetSystemMetrics(int index);
 
         [DllImport("user32.dll")]
         internal static extern int GetDlgCtrlID(IntPtr hWnd);
@@ -58,32 +58,6 @@ namespace LabVIEWDialogWatchdog
         [DllImport("kernel32.dll")]
         internal static extern bool CloseHandle(IntPtr handle);
 
-        [DllImport("user32.dll")]
-        internal static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
-
-        [DllImport("user32.dll")]
-        internal static extern bool SetForegroundWindow(IntPtr hWnd);
-
-        [DllImport("user32.dll")]
-        internal static extern IntPtr GetForegroundWindow();
-
-        [DllImport("user32.dll")]
-        internal static extern bool GetLastInputInfo(ref LASTINPUTINFO info);
-
-        internal struct LASTINPUTINFO
-        {
-            public uint cbSize;
-            public uint dwTime;
-        }
-
-        [DllImport("user32.dll")]
-        internal static extern int GetSystemMetrics(int index);
-
-        internal const int SM_XVIRTUALSCREEN = 76;
-        internal const int SM_YVIRTUALSCREEN = 77;
-        internal const int SM_CXVIRTUALSCREEN = 78;
-        internal const int SM_CYVIRTUALSCREEN = 79;
-
         internal struct RECT
         {
             public int Left;
@@ -92,12 +66,12 @@ namespace LabVIEWDialogWatchdog
             public int Bottom;
         }
 
-        internal const int GWL_STYLE = -16;
-        internal const uint GW_OWNER = 4;
-        internal const int WS_DLGFRAME = 0x00400000;
+        internal const int SM_XVIRTUALSCREEN = 76;
+        internal const int SM_YVIRTUALSCREEN = 77;
+        internal const int SM_CXVIRTUALSCREEN = 78;
+        internal const int SM_CYVIRTUALSCREEN = 79;
 
         internal const uint BM_CLICK = 0x00F5;
-        internal const uint WM_CLOSE = 0x0010;
         internal const uint WM_COMMAND = 0x0111;
         internal const uint WM_KEYDOWN = 0x0100;
         internal const uint WM_KEYUP = 0x0101;

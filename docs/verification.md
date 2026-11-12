@@ -20,7 +20,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File tests\run-tests.ps1
 - 普通对话框（非 Internal Warning）不被识别、不被点击
 - 非目标进程不处理
 - `--dry-run` 不点击
-- 单元测试：标记匹配、按钮精确匹配、危险词、配置解析、延迟上限、默认 5 秒
+- 单元测试：标记匹配、按钮精确匹配、危险词、配置解析、延迟上限、默认 1 秒
 
 ## 2. 真实 LabVIEW Internal Warning
 
@@ -36,7 +36,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File tests\run-tests.ps1
 23:29:22.544 对话框已关闭：...
 ```
 
-检测到点击 **5.02 秒**，符合默认 `clickDelaySeconds=5`；点击后对话框关闭，LabVIEW 恢复。
+检测到点击 **5.02 秒**，当时默认 `clickDelaySeconds=5`（现默认 1 秒）；点击后对话框关闭，LabVIEW 恢复。
 
 ### 2.2 历史批量验证（旧版本，同一识别路径）
 
@@ -66,16 +66,16 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File tests\run-tests.ps1
    pwsh -NoProfile -ExecutionPolicy Bypass -File install.ps1 -Start
    ```
 
-2. 确认守护启动（日志出现“守护已启动”），配置中的 `clickDelaySeconds` 默认 5。
+2. 确认守护启动（日志出现“守护已启动”），配置中的 `clickDelaySeconds` 默认 1。
 
 3. 触发方式：
 
-   - 重启 LabVIEW，观察启动阶段的 Internal Warning 在约 5 秒后被自动关闭；
+   - 重启 LabVIEW，观察启动阶段的 Internal Warning 在约 1 秒后被自动关闭；
    - 用 `tests\LabVIEWDialogFixture.exe --internal-warning` 模拟。
 
 4. 验证：
 
-   - 日志出现“检测到 Internal Warning 对话框” → “等待 5 秒后自动点击” → “第 1 次点击” → “对话框已关闭”；
+   - 日志出现“检测到 Internal Warning 对话框” → “等待 N 秒后自动点击” → “第 1 次点击” → “对话框已关闭”；
    - 普通对话框不产生任何“检测到”日志；
    - 点击后 LabVIEW 主窗口恢复可操作。
 
@@ -88,4 +88,5 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File tests\run-tests.ps1
 - 实际点击时间 = `clickDelaySeconds` + 最多一个轮询周期。
 
 原始日志保留在本机 `%LOCALAPPDATA%\Programs\LabVIEWDialogWatchdog\logs\`，不随仓库提交。
+
 

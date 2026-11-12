@@ -18,7 +18,7 @@ namespace LabVIEWDialogWatchdog.Tests
             string normalizeWarning;
             defaults.Normalize(out normalizeWarning);
 
-            Check("默认 5 秒后点击", defaults.clickDelaySeconds == 5);
+            Check("默认 1 秒后点击", defaults.clickDelaySeconds == 1);
             Check("默认只监控 LabVIEW", defaults.targetProcessNames[0] == "LabVIEW");
             Check("识别 Internal Warning", WindowScanner.HasInternalMarker(
                 "Internal Warning 0x0A6FE5367 : \"undo.cpp\"", defaults.internalDialogMarkers));
@@ -46,14 +46,14 @@ namespace LabVIEWDialogWatchdog.Tests
 
             File.WriteAllText(configPath, "{not-json");
             WatchdogSettings broken = WatchdogSettings.Load(configPath, out warning);
-            Check("坏配置回退默认值", broken.clickDelaySeconds == 5);
+            Check("坏配置回退默认值", broken.clickDelaySeconds == 1);
             Check("坏配置给出警告", !string.IsNullOrEmpty(warning));
 
             string defaultPath = Path.Combine(tempDir, "default-config.json");
             File.WriteAllText(defaultPath, WatchdogSettings.DefaultJson());
             WatchdogSettings defaultConfig = WatchdogSettings.Load(defaultPath, out warning);
             Check("默认配置可被解析", string.IsNullOrEmpty(warning));
-            Check("默认配置保留 5 秒", defaultConfig.clickDelaySeconds == 5);
+            Check("默认配置保留 1 秒", defaultConfig.clickDelaySeconds == 1);
 
             string commentedPath = Path.Combine(tempDir, "commented-config.json");
             File.WriteAllText(commentedPath, "{\n  // 手工注释\n  \"clickDelaySeconds\": 7\n}");
@@ -76,3 +76,4 @@ namespace LabVIEWDialogWatchdog.Tests
         }
     }
 }
+

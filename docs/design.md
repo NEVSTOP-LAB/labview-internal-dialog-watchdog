@@ -8,7 +8,7 @@
 **目标**
 
 - 识别 LabVIEW 进程的 `Internal Warning` / `Internal Error` 对话框（窗口类 `#32770`）。
-- 出现后等待 `clickDelaySeconds`（默认 5 秒），仍存在则点击“确定”，让 labview-mcp 调用继续。
+- 出现后等待 `clickDelaySeconds`（默认 1 秒），仍存在则点击“确定”，让 labview-mcp 调用继续。
 - 单 exe、托盘常驻、低资源占用；不引入运行时依赖。
 
 **非目标**
@@ -87,7 +87,7 @@ EnumWindows 找目标进程窗口
 
 ### 3.5 延迟（clickDelaySeconds）
 
-首次识别到对话框后等待 `clickDelaySeconds` 秒（默认 5）再点击：
+首次识别到对话框后等待 `clickDelaySeconds` 秒（默认 1）再点击：
 
 - 期间对话框消失（人手动点掉、或它自己关闭）→ 状态移除，守护不做任何动作；
 - 仍存在 → 进入点击流程；
@@ -125,7 +125,7 @@ EnumWindows 找目标进程窗口
 
 | 项 | 默认 | 原因 |
 |---|---|---|
-| `clickDelaySeconds` | 5 | 留出人工处理时间 |
+| `clickDelaySeconds` | 1 | 留出人工处理时间 |
 | `internalDialogMarkers` | Internal Warning/Error | 只处理目标对话框 |
 | `maxClickAttempts` | 3 | 失败不无限重试 |
 | `excludeButtonTexts` | 取消/停止/放弃/No | 不点否定按钮 |
@@ -138,7 +138,7 @@ EnumWindows 找目标进程窗口
   非目标进程不处理、`--dry-run` 不点击。共 13 项检查。
 - **CI**：`build` 构建 + 单元测试 + 扫描 JSON 断言；`e2e` job 跑完整夹具。
 - **真实 LabVIEW**：12 + 6 个真实 `#32770` 内部告警自动关闭；简化版在 23:29 对
-  `Internal Warning 0x0CA3C7EB : LVFPGATarget.cpp` 检测后等待 5.02 秒点击并关闭。
+  `Internal Warning 0x0CA3C7EB : LVFPGATarget.cpp` 检测时默认 5 秒，实际等待 5.02 秒点击并关闭；现默认 1 秒。
   非 Internal Warning 的 `error 8` 框按设计忽略。详见 [verification.md](verification.md)。
 
 ## 7. 已知限制
@@ -162,3 +162,4 @@ EnumWindows 找目标进程窗口
 | `src/Settings.cs` | 配置模型与默认值 |
 | `src/Native.cs` | Win32 P/Invoke |
 | `tests/` | 单元测试、夹具、端到端脚本 |
+

@@ -26,7 +26,7 @@ namespace LabVIEWDialogWatchdog
         public string[] excludeButtonTexts = { "Cancel", "取消", "Stop", "停止", "Abort", "放弃", "No", "否" };
 
         /// <summary>对话框出现后等待多少秒再点击，默认 5。</summary>
-        public int clickDelaySeconds = 5;
+        public int clickDelaySeconds = 1;
 
         /// <summary>扫描间隔（毫秒）。</summary>
         public int pollIntervalMs = 500;
@@ -136,7 +136,7 @@ namespace LabVIEWDialogWatchdog
   ""internalDialogMarkers"": [""internal warning"", ""internal error"", ""内部警告"", ""内部错误""],
   ""confirmButtonTexts"": [""OK"", ""确定"", ""Continue"", ""继续"", ""Close"", ""关闭""],
   ""excludeButtonTexts"": [""Cancel"", ""取消"", ""Stop"", ""停止"", ""Abort"", ""放弃"", ""No"", ""否""],
-  ""clickDelaySeconds"": 5,
+  ""clickDelaySeconds"": 1,
   ""pollIntervalMs"": 500,
   ""maxClickAttempts"": 3,
   ""clickRetryDelayMs"": 900,
@@ -148,3 +148,4 @@ namespace LabVIEWDialogWatchdog
         }
     }
 }
+

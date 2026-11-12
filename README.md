@@ -1,14 +1,14 @@
 # LabVIEW Dialog Watchdog
 
 Windows 托盘守护进程：只监控 LabVIEW 的 **Internal Warning / Internal Error** 对话框，出现后等待 N 秒
-（默认 5 秒）自动点击“确定”，让 labview-mcp 等自动化调用继续。**其他对话框一律不管。**
+（默认 1 秒）自动点击“确定”，让 labview-mcp 等自动化调用继续。**其他对话框一律不管。**
 
 ![Internal Warning 示例](docs/internal-warning.png)
 
 - 单文件 exe，约 40 KB，只依赖 Windows 自带的 .NET Framework 4.8
 - 托盘常驻、无主窗口；轮询间隔 300–500ms，静止时 CPU 接近 0
 - 只识别窗口类 `#32770` 且文本包含 `Internal Warning` / `Internal Error`（含中文“内部警告/内部错误”）的对话框
-- 对话框出现后先等 `clickDelaySeconds`（默认 5 秒），仍存在才点击；期间被手动处理就不动作
+- 对话框出现后先等 `clickDelaySeconds`（默认 1 秒），仍存在才点击；期间被手动处理就不动作
 - 其他对话框（普通错误、保存/覆盖提示、One Button Dialog 等）完全不处理
 
 ## 工作原理
@@ -52,7 +52,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File install.ps1 -InstallDir "$env:LOCA
 | `internalDialogMarkers` | `internal warning/internal error/内部警告/内部错误` | 文本命中才处理 |
 | `confirmButtonTexts` | `OK/确定/Continue/继续/Close/关闭` | 视为确认的按钮（精确匹配） |
 | `excludeButtonTexts` | `Cancel/取消/Stop/停止/...` | 永不点击的按钮 |
-| `clickDelaySeconds` | `5` | 出现后等待多少秒再点；0 立即点 |
+| `clickDelaySeconds` | `1` | 出现后等待多少秒再点；0 立即点 |
 | `pollIntervalMs` | `500` | 扫描间隔（100–5000） |
 | `maxClickAttempts` | `3` | 同一对话框最多尝试次数 |
 | `clickRetryDelayMs` | `900` | 两次尝试间隔 |
@@ -120,3 +120,4 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File tests\run-tests.ps1
 ## License
 
 MIT
+

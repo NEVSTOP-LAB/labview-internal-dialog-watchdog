@@ -34,7 +34,7 @@ if (-not (Test-Path -LiteralPath $config)) {
         targetProcessNames = @('LabVIEW')
         logDirectory       = (Join-Path $InstallDir 'logs')
         pollIntervalMs     = 300
-        clickDelaySeconds  = 5
+        clickDelaySeconds  = 1
         showNotifications  = $true
         dryRun             = $false
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $config -Encoding utf8
@@ -62,3 +62,4 @@ Write-Host "已安装：$exePath"
 Write-Host "配置：  $config"
 Write-Host "日志：  $(Join-Path $InstallDir 'logs')"
 Write-Host "自启：  $(if ($AutoStart) { '已启用' } elseif ($RemoveAutoStart) { '已取消' } else { '保持现状' })"
+

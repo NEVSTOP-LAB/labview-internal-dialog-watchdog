@@ -37,6 +37,7 @@ if (-not (Test-Path -LiteralPath $config)) {
         minSeenCount         = 2
         enableKeyboardFallback = $false
         enableWindowCloseFallback = $false
+        clickDelayMs         = 5000
         userActivityGuard    = $true
         userActivityIdleMs   = 2000
         userActivityWindowMs = 3000

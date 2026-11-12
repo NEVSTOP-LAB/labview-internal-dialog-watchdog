@@ -73,7 +73,7 @@ namespace LabVIEWDialogWatchdog.Tests
             WatchdogSettings defaultConfig = WatchdogSettings.Load(defaultPath, out warning);
             Check("默认配置可被解析", string.IsNullOrEmpty(warning));
             Check("默认配置保留键盘兜底", defaultConfig.keyboardFallbackWindowClasses[0] == "LVDChild");
-            Check("默认配置延迟正确", defaultConfig.keyboardFallbackDelayMs == 800);
+            Check("默认值守窗口 5s", defaultConfig.clickDelayMs == 5000);
 
             string commentedPath = Path.Combine(tempDir, "commented-config.json");
             File.WriteAllText(commentedPath,

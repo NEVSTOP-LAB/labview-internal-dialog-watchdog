@@ -22,7 +22,7 @@ namespace LabVIEWDialogWatchdog
             public DateTime LastSeenUtc;
             public bool Completed;
             public bool GaveUp;
-            public bool KeyboardDelayApplied;
+            public bool GraceApplied;
             public bool DryRunLogged;
             public bool UserHandled;
             public DialogInfo LastInfo;
@@ -153,18 +153,17 @@ namespace LabVIEWDialogWatchdog
                     continue;
                 }
 
-                // 自绘对话框没有可枚举按钮时，先等一会儿，避免误触瞬时进度框。
-                // 这里不消耗尝试次数，保证第一次真正的点击就是 Enter。
+                // 值守窗口：对话框出现后先等 clickDelayMs，有人值守通常会在这段时间自己点掉。
+                // 不消耗尝试次数，保证窗口结束后第一次动作就是正常点击。
                 if (state.Attempts == 0
-                    && string.Equals(dialog.ButtonSource, "keyboard", StringComparison.OrdinalIgnoreCase)
-                    && !state.KeyboardDelayApplied
-                    && _settings.keyboardFallbackDelayMs > 0)
+                    && !state.GraceApplied
+                    && _settings.clickDelayMs > 0)
                 {
-                    state.KeyboardDelayApplied = true;
-                    state.NextAttemptUtc = now.AddMilliseconds(_settings.keyboardFallbackDelayMs);
+                    state.GraceApplied = true;
+                    state.NextAttemptUtc = now.AddMilliseconds(_settings.clickDelayMs);
                     _log.Info(string.Format(
-                        "对话框没有可枚举按钮，等待 {0}ms 后按 Enter：{1}",
-                        _settings.keyboardFallbackDelayMs,
+                        "检测到对话框，等待 {0}ms 观察是否有人值守处理：{1}",
+                        _settings.clickDelayMs,
                         Describe(string.Empty, dialog)));
                     continue;
                 }

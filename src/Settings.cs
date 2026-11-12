@@ -30,8 +30,8 @@ namespace LabVIEWDialogWatchdog
         /// <summary>可以在没有原生按钮时按 Enter 的窗口类（LabVIEW 自绘对话框）。</summary>
         public string[] keyboardFallbackWindowClasses = { "LVDChild" };
 
-        /// <summary>没有原生按钮时，首次按 Enter 前的等待（毫秒），避免误触瞬时进度框。</summary>
-        public int keyboardFallbackDelayMs = 800;
+        /// <summary>对话框出现后等待多久再自动点击（毫秒），默认 5000；用于给值守人员留出自己处理的时间。</summary>
+        public int clickDelayMs = 5000;
 
         /// <summary>是否启用无按钮时的键盘兜底。默认关闭：只有显式开启才会对无按钮自绘框按 Enter。</summary>
         public bool enableKeyboardFallback = false;
@@ -125,8 +125,8 @@ namespace LabVIEWDialogWatchdog
             {
                 keyboardFallbackWindowClasses = new[] { "LVDChild" };
             }
-            if (keyboardFallbackDelayMs < 0) keyboardFallbackDelayMs = 0;
-            if (keyboardFallbackDelayMs > 10000) keyboardFallbackDelayMs = 10000;
+            if (clickDelayMs < 0) clickDelayMs = 0;
+            if (clickDelayMs > 60000) clickDelayMs = 60000;
             if (userActivityIdleMs < 0) userActivityIdleMs = 0;
             if (userActivityIdleMs > 60000) userActivityIdleMs = 60000;
             if (userActivityWindowMs < 0) userActivityWindowMs = 0;
@@ -182,7 +182,7 @@ namespace LabVIEWDialogWatchdog
   ""excludeButtonTexts"": [""Cancel"", ""取消"", ""Stop"", ""停止"", ""Abort"", ""放弃"", ""No"", ""否""],
   ""excludeDialogTitlePatterns"": [""保存"", ""覆盖"", ""删除"", ""重命名"", ""退出"", ""停止"", ""Save"", ""Overwrite"", ""Delete"", ""Rename"", ""Exit"", ""Stop""],
   ""keyboardFallbackWindowClasses"": [""LVDChild""],
-  ""keyboardFallbackDelayMs"": 800,
+  ""clickDelayMs"": 5000,
   ""enableKeyboardFallback"": false,
   ""enableWindowCloseFallback"": false,
   ""userActivityGuard"": true,

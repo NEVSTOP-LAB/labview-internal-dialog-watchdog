@@ -108,7 +108,7 @@ function Invoke-DialogScenario {
         enableWindowCloseFallback = $false
         maxClickAttempts   = 3
         clickRetryDelayMs  = 500
-        keyboardFallbackDelayMs = 300
+        clickDelayMs       = 0
         showNotifications  = $false
         userActivityGuard  = $false
         confirmButtonTexts = @('OK', '确定', 'Continue', '继续', 'Close', '关闭')

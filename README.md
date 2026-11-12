@@ -69,9 +69,9 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File install.ps1 -InstallDir "$env:LOCA
 | `excludeButtonTexts` | `Cancel/取消/Stop/停止/Abort/放弃/No/否` | 永不点击的按钮 |
 | `excludeDialogTitlePatterns` | 保存/覆盖/删除/重命名/退出/停止 + 英文 | 标题命中片段的对话框不处理 |
 | `keyboardFallbackWindowClasses` | `["LVDChild"]` | 没有原生按钮时可按 Enter 的窗口类 |
-| `keyboardFallbackDelayMs` | `800` | 首次按 Enter 前的等待，避免误触瞬时进度框 |
 | `enableKeyboardFallback` | `false` | 是否启用无按钮时的键盘兜底（默认关闭） |
 | `enableWindowCloseFallback` | `false` | 是否允许 `WM_CLOSE` 最后兜底（默认关闭；强关可能破坏调用方） |
+| `clickDelayMs` | `5000` | 对话框出现后先等多久再自动点击（值守窗口） |
 | `userActivityGuard` | `true` | 只在用户没有操作 LabVIEW 时自动点击 |
 | `userActivityIdleMs` | `2000` | 系统最近键鼠输入早于该毫秒数才视为用户已离开 |
 | `userActivityWindowMs` | `3000` | 回看多久内的前台窗口历史，判断对话框出现前用户是否在操作 LabVIEW |
@@ -90,6 +90,19 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File install.ps1 -InstallDir "$env:LOCA
 > 的 Enter 兜底默认关闭；需要时在配置里把 `enableKeyboardFallback` 设为 `true`，
 > 并确认 `excludeDialogTitlePatterns` 覆盖了业务上危险的标题。
 > `WM_CLOSE` 默认关闭：真实测试中强关 LabVIEW 自绘框曾导致其 AI gRPC 服务卡死。
+
+## 值守窗口（默认 5 秒）
+
+对话框出现后不会立刻点击，先等 `clickDelayMs`（默认 **5000ms**）。这段时间用于判断是否有人值守：
+
+- 有人在：通常会在 5 秒内自己点掉，对话框消失后守护不会再做任何动作；
+- 无人值守：超过 5 秒仍未处理，守护才自动点击（自绘无按钮对话框在窗口结束后发 Enter）。
+
+所以“出现对话框 → 自动点击”的延迟就是这个配置；设为 `0` 可立即点击，设为 `10000` 就是 10 秒。
+`userActivityGuard` 与这个窗口是互补的：前者判断“你正在操作 LabVIEW”时整个跳过，后者给“你在旁边但没操作”留出处理时间。
+
+真实验证（2026-11-12）：无人值守时 5.0 秒后自动 Enter，MCP 调用 `runMs=5266` 返回 `ok:true`；
+模拟有人值守在 92ms 内手动按掉，守护 0 次自动点击，调用 `runMs=285` 返回。
 
 ## 只在自动化时工作（用户操作闸门）
 

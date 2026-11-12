@@ -1,0 +1,59 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 构建（.NET Framework csc）
+        shell: pwsh
+        run: ./build.ps1 -Tests -Clean
+
+      - name: 单元测试
+        shell: pwsh
+        run: |
+          ./dist/tests/LabVIEWDialogWatchdog.Tests.exe "$env:RUNNER_TEMP\watchdog-unit"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: 扫描冒烟
+        shell: pwsh
+        run: |
+          $out = "$env:RUNNER_TEMP\scan.json"
+          ./dist/LabVIEWDialogWatchdog.exe --scan --json --out $out
+          $deadline = (Get-Date).AddSeconds(10)
+          while (-not (Test-Path -LiteralPath $out) -and (Get-Date) -lt $deadline) {
+            Start-Sleep -Milliseconds 200
+          }
+          if (-not (Test-Path -LiteralPath $out)) { throw '扫描结果文件未生成' }
+          $text = Get-Content -LiteralPath $out -Raw -Encoding UTF8
+          $items = @($text | ConvertFrom-Json)
+          Write-Output ("scan items: " + $items.Count)
+          if ($text.Trim() -notmatch '^\[.*\]$') { throw "扫描结果不是 JSON 数组: $text" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LabVIEWDialogWatchdog
+          path: dist/LabVIEWDialogWatchdog.exe
+
+  e2e:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 构建测试夹具
+        shell: pwsh
+        run: ./build.ps1 -Tests -Clean
+
+      - name: 端到端（对话框夹具）
+        shell: pwsh
+        run: |
+          ./tests/run-tests.ps1 -SkipBuild -TempDir "$env:RUNNER_TEMP\watchdog-e2e"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

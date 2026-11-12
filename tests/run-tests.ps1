@@ -110,6 +110,7 @@ function Invoke-DialogScenario {
         clickRetryDelayMs  = 500
         keyboardFallbackDelayMs = 300
         showNotifications  = $false
+        userActivityGuard  = $false
         confirmButtonTexts = @('OK', '确定', 'Continue', '继续', 'Close', '关闭')
         excludeButtonTexts = @('Cancel', '取消', 'Stop', '停止', 'Abort', '放弃', 'No', '否')
         keyboardFallbackWindowClasses = @('LVDChild', 'LVDChildWatchdogFixture')
@@ -173,6 +174,7 @@ Remove-Item -LiteralPath $dangerMarker -Force -ErrorAction SilentlyContinue
     logDirectory       = $dangerLog
     pollIntervalMs     = 200
     showNotifications  = $false
+    userActivityGuard  = $false
 } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $dangerConfig -Encoding utf8
 $dangerProcess = Start-Quoted -FilePath $fixture -Arguments @('--danger', $dangerMarker) `
     -RedirectOut (Join-Path $TempDir 'fixture-danger.out') -RedirectErr (Join-Path $TempDir 'fixture-danger.err')
@@ -202,6 +204,7 @@ Remove-Item -LiteralPath $defaultSafeMarker -Force -ErrorAction SilentlyContinue
     pollIntervalMs     = 200
     minSeenCount       = 1
     showNotifications  = $false
+    userActivityGuard  = $false
 } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $defaultSafeConfig -Encoding utf8
 $defaultSafeProcess = Start-Quoted -FilePath $fixture -Arguments @('--labview-custom', $defaultSafeMarker) `
     -RedirectOut (Join-Path $TempDir 'fixture-default-safe.out') -RedirectErr (Join-Path $TempDir 'fixture-default-safe.err')
@@ -253,6 +256,7 @@ New-Item -ItemType Directory -Force -Path $negativeLog | Out-Null
     logDirectory       = $negativeLog
     pollIntervalMs     = 200
     showNotifications  = $false
+    userActivityGuard  = $false
 } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $negativeConfig -Encoding utf8
 $negativeMarker = Join-Path $TempDir 'closed-negative.txt'
 Remove-Item -LiteralPath $negativeMarker -Force -ErrorAction SilentlyContinue
@@ -278,3 +282,4 @@ if ($script:failures -eq 0) {
 }
 Write-Host "FAILED: $script:failures / $script:total checks"
 exit 1
+

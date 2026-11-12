@@ -65,6 +65,18 @@ namespace LabVIEWDialogWatchdog
         internal static extern bool SetForegroundWindow(IntPtr hWnd);
 
         [DllImport("user32.dll")]
+        internal static extern IntPtr GetForegroundWindow();
+
+        [DllImport("user32.dll")]
+        internal static extern bool GetLastInputInfo(ref LASTINPUTINFO info);
+
+        internal struct LASTINPUTINFO
+        {
+            public uint cbSize;
+            public uint dwTime;
+        }
+
+        [DllImport("user32.dll")]
         internal static extern int GetSystemMetrics(int index);
 
         internal const int SM_XVIRTUALSCREEN = 76;

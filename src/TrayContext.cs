@@ -186,10 +186,10 @@ namespace LabVIEWDialogWatchdog
         {
             string state = _engine.Paused ? "已暂停" : (_engine.DryRun ? "观察模式" : "监控中");
             _statusItem.Text = string.Format(
-                "状态：{0} · 已处理 {1} 次 · 失败 {2} 次",
+                "状态：{0} · 已处理 {1} 次 · 用户跳过 {2} 次",
                 state,
                 _engine.DismissedCount,
-                _engine.FailedCount + _engine.ClickSendFailures);
+                _engine.UserSkippedCount);
             _pauseItem.Text = _engine.Paused ? "恢复监控" : "暂停监控";
             _notifyIcon.Text = Truncate("LabVIEW 对话框守护 · " + state, 63);
         }

@@ -37,6 +37,9 @@ if (-not (Test-Path -LiteralPath $config)) {
         minSeenCount         = 2
         enableKeyboardFallback = $false
         enableWindowCloseFallback = $false
+        userActivityGuard    = $true
+        userActivityIdleMs   = 2000
+        userActivityWindowMs = 3000
         showNotifications    = $true
         dryRun               = $false
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $config -Encoding utf8

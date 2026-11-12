@@ -72,6 +72,9 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File install.ps1 -InstallDir "$env:LOCA
 | `keyboardFallbackDelayMs` | `800` | 首次按 Enter 前的等待，避免误触瞬时进度框 |
 | `enableKeyboardFallback` | `false` | 是否启用无按钮时的键盘兜底（默认关闭） |
 | `enableWindowCloseFallback` | `false` | 是否允许 `WM_CLOSE` 最后兜底（默认关闭；强关可能破坏调用方） |
+| `userActivityGuard` | `true` | 只在用户没有操作 LabVIEW 时自动点击 |
+| `userActivityIdleMs` | `2000` | 系统最近键鼠输入早于该毫秒数才视为用户已离开 |
+| `userActivityWindowMs` | `3000` | 回看多久内的前台窗口历史，判断对话框出现前用户是否在操作 LabVIEW |
 | `pollIntervalMs` | `500` | 扫描间隔（100–5000） |
 | `minSeenCount` | `2` | 连续看到多少次才点击 |
 | `maxClickAttempts` | `3` | 单个对话框最多尝试次数 |
@@ -87,6 +90,22 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File install.ps1 -InstallDir "$env:LOCA
 > 的 Enter 兜底默认关闭；需要时在配置里把 `enableKeyboardFallback` 设为 `true`，
 > 并确认 `excludeDialogTitlePatterns` 覆盖了业务上危险的标题。
 > `WM_CLOSE` 默认关闭：真实测试中强关 LabVIEW 自绘框曾导致其 AI gRPC 服务卡死。
+
+## 只在自动化时工作（用户操作闸门）
+
+默认开启 `userActivityGuard`：对话框出现时，如果“最近 3 秒内 LabVIEW 曾在前台”且“系统最近 2 秒内有键鼠输入”，
+就判定为你正在手动操作 LabVIEW，**这个对话框的整个生命周期都不自动点击**，留给你自己处理；日志会写
+`检测到用户正在操作 LabVIEW，跳过自动点击`，托盘状态显示“用户跳过 N 次”。
+
+判据只看**对话框出现之前**的前台历史，避免对话框自己抢到前台后被误判。
+MCP 在后台自动化时通常不满足该条件；你在其他窗口打字也不会触发跳过。
+
+> [!NOTE]
+> 这个闸门是启发式的，边界是：
+> - 如果你正在操作 LabVIEW，同时 MCP 也触发了对话框，守护会跳过（按你的要求不干扰手动操作），需要你点一下；
+> - 如果手动操作时 LabVIEW 不在前台、或距上次输入超过 2 秒，可能仍会被自动点击；
+> - 需要完全停止自动点击时，用托盘菜单“暂停监控”。
+> 可手动验证：保持守护运行，自己在 LabVIEW 里触发一个对话框，日志应出现“跳过自动点击”而不是“检测到阻塞对话框”。
 
 ## 命令行
 

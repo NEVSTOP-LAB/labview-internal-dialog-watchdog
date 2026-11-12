@@ -17,6 +17,12 @@ namespace LabVIEWDialogWatchdog.Tests
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         private static extern int MessageBox(IntPtr owner, string text, string caption, uint type);
 
+        [DllImport("user32.dll")]
+        private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern void mouse_event(uint flags, int dx, int dy, uint data, UIntPtr extraInfo);
+
         [STAThread]
         private static int Main(string[] args)
         {
@@ -34,6 +40,14 @@ namespace LabVIEWDialogWatchdog.Tests
             else if (string.Equals(mode, "--labview-custom", StringComparison.OrdinalIgnoreCase))
             {
                 RawDialogFixture.Show();
+            }
+            else if (string.Equals(mode, "--guard", StringComparison.OrdinalIgnoreCase))
+            {
+                ShowGuardDialog();
+            }
+            else if (string.Equals(mode, "--guard-history", StringComparison.OrdinalIgnoreCase))
+            {
+                ShowGuardHistoryDialog();
             }
             else
             {
@@ -92,6 +106,92 @@ namespace LabVIEWDialogWatchdog.Tests
                     dialog.ShowDialog(owner);
                 }
                 owner.Close();
+            }
+        }
+
+        /// <summary>用户正在操作的模拟：窗口保持前台并持续注入输入，供 userActivityGuard 测试。</summary>
+        private static void ShowGuardDialog()
+        {
+            Application.EnableVisualStyles();
+            using (var owner = new Form
+            {
+                Text = "Fixture owner",
+                ShowInTaskbar = false,
+                WindowState = FormWindowState.Minimized,
+                Opacity = 0
+            })
+            {
+                owner.Show();
+                ShowInputDialog(owner);
+                owner.Close();
+            }
+        }
+
+        /// <summary>
+        /// 更像手动操作的模拟：先显示主窗口，1.2 秒后弹出对话框；
+        /// 测试在此期间点击主窗口，让守护的前台历史里出现目标进程。
+        /// </summary>
+        private static void ShowGuardHistoryDialog()
+        {
+            Application.EnableVisualStyles();
+            using (var owner = new Form
+            {
+                Text = "Fixture main",
+                StartPosition = FormStartPosition.CenterScreen,
+                ClientSize = new Size(400, 200)
+            })
+            {
+                var timer = new System.Windows.Forms.Timer { Interval = 1200 };
+                timer.Tick += delegate
+                {
+                    timer.Stop();
+                    ShowInputDialog(owner);
+                    owner.Close();
+                };
+                owner.Shown += delegate { timer.Start(); };
+                owner.FormClosed += delegate { timer.Stop(); };
+                Application.Run(owner);
+            }
+        }
+
+        private static void ShowInputDialog(Form owner)
+        {
+            using (var dialog = new Form
+            {
+                Text = "LabVIEW Guard Test",
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                StartPosition = FormStartPosition.CenterScreen,
+                ClientSize = new Size(420, 140),
+                TopMost = true,
+                MinimizeBox = false,
+                MaximizeBox = false
+            })
+            {
+                dialog.Controls.Add(new Label
+                {
+                    Text = "Simulated user operation",
+                    AutoSize = true,
+                    Location = new Point(16, 22)
+                });
+                var ok = new Button
+                {
+                    Text = "确定",
+                    DialogResult = DialogResult.OK,
+                    Location = new Point(310, 90),
+                    Size = new Size(90, 30)
+                };
+                dialog.Controls.Add(ok);
+                dialog.AcceptButton = ok;
+
+                var timer = new System.Windows.Forms.Timer { Interval = 150 };
+                timer.Tick += delegate
+                {
+                    SetForegroundWindow(dialog.Handle);
+                    mouse_event(0x0001, 1, 0, 0, UIntPtr.Zero);
+                };
+                dialog.Shown += delegate { timer.Start(); };
+                dialog.FormClosed += delegate { timer.Stop(); };
+                dialog.ShowDialog(owner);
             }
         }
 

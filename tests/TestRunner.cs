@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 
 namespace LabVIEWDialogWatchdog.Tests
@@ -22,6 +23,20 @@ namespace LabVIEWDialogWatchdog.Tests
             Check("默认 minSeenCount=2", defaults.minSeenCount == 2);
             Check("默认排除保存类标题", IsSaveTitleExcluded(defaults));
             Check("危险按钮文本可识别", WindowScanner.IsDangerousButtonText("关闭而不保存"));
+            Check("用户操作闸门：前台是目标且刚有输入则跳过", UserActivityGuard.ShouldSkip(true, 500, 2000, true));
+            Check("用户操作闸门：空闲足够久不跳过", !UserActivityGuard.ShouldSkip(true, 5000, 2000, true));
+            Check("用户操作闸门：前台不是目标不跳过", !UserActivityGuard.ShouldSkip(true, 500, 2000, false));
+            Check("用户操作闸门：关闭时不跳过", !UserActivityGuard.ShouldSkip(false, 500, 2000, true));
+
+            DateTime now = DateTime.UtcNow;
+            var history = new List<DialogWatchdogEngine.ForegroundSample>
+            {
+                new DialogWatchdogEngine.ForegroundSample { At = now.AddMilliseconds(-800), Pid = 4242 },
+                new DialogWatchdogEngine.ForegroundSample { At = now.AddMilliseconds(-5000), Pid = 4242 }
+            };
+            Check("前台历史：窗口内命中目标进程", DialogWatchdogEngine.HasRecentForeground(history, 4242, now, 3000));
+            Check("前台历史：窗口外的旧样本不算", !DialogWatchdogEngine.HasRecentForeground(history, 4242, now, 500));
+            Check("前台历史：其他进程不算", !DialogWatchdogEngine.HasRecentForeground(history, 9999, now, 3000));
 
             Check("默认确认文本包含 确定", WindowScanner.IsConfirmText("确定", defaults.confirmButtonTexts));
             Check("默认确认文本包含 OK", WindowScanner.IsConfirmText("OK", defaults.confirmButtonTexts));

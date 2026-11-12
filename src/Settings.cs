@@ -51,6 +51,15 @@ namespace LabVIEWDialogWatchdog
         /// <summary>两次点击尝试之间的等待（毫秒）。</summary>
         public int clickRetryDelayMs = 900;
 
+        /// <summary>是否只处理“用户没有正在操作 LabVIEW”时出现的对话框（默认开启）。</summary>
+        public bool userActivityGuard = true;
+
+        /// <summary>系统最近一次键鼠输入早于该毫秒数，才视为用户已离开（默认 2000ms）。</summary>
+        public int userActivityIdleMs = 2000;
+
+        /// <summary>回看多少毫秒内的前台窗口历史，判断对话框出现前用户是否在操作 LabVIEW（默认 3000ms）。</summary>
+        public int userActivityWindowMs = 3000;
+
         /// <summary>启动后立即暂停监控。</summary>
         public bool startPaused = false;
 
@@ -118,6 +127,10 @@ namespace LabVIEWDialogWatchdog
             }
             if (keyboardFallbackDelayMs < 0) keyboardFallbackDelayMs = 0;
             if (keyboardFallbackDelayMs > 10000) keyboardFallbackDelayMs = 10000;
+            if (userActivityIdleMs < 0) userActivityIdleMs = 0;
+            if (userActivityIdleMs > 60000) userActivityIdleMs = 60000;
+            if (userActivityWindowMs < 0) userActivityWindowMs = 0;
+            if (userActivityWindowMs > 60000) userActivityWindowMs = 60000;
             if (pollIntervalMs < 100) pollIntervalMs = 100;
             if (pollIntervalMs > 5000) pollIntervalMs = 5000;
             if (minSeenCount < 1) minSeenCount = 1;
@@ -172,6 +185,9 @@ namespace LabVIEWDialogWatchdog
   ""keyboardFallbackDelayMs"": 800,
   ""enableKeyboardFallback"": false,
   ""enableWindowCloseFallback"": false,
+  ""userActivityGuard"": true,
+  ""userActivityIdleMs"": 2000,
+  ""userActivityWindowMs"": 3000,
   ""pollIntervalMs"": 500,
   ""minSeenCount"": 2,
   ""maxClickAttempts"": 3,

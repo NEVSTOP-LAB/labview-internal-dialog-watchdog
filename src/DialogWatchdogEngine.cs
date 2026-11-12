@@ -24,12 +24,20 @@ namespace LabVIEWDialogWatchdog
             public bool GaveUp;
             public bool KeyboardDelayApplied;
             public bool DryRunLogged;
+            public bool UserHandled;
             public DialogInfo LastInfo;
+        }
+
+        internal struct ForegroundSample
+        {
+            public DateTime At;
+            public int Pid;
         }
 
         private readonly WatchdogSettings _settings;
         private readonly Log _log;
         private readonly Dictionary<IntPtr, DialogState> _states = new Dictionary<IntPtr, DialogState>();
+        private readonly List<ForegroundSample> _foregroundHistory = new List<ForegroundSample>();
 
         public DialogWatchdogEngine(WatchdogSettings settings, Log log)
         {
@@ -43,6 +51,7 @@ namespace LabVIEWDialogWatchdog
         public int DismissedCount { get; private set; }
         public int FailedCount { get; private set; }
         public int ClickSendFailures { get; private set; }
+        public int UserSkippedCount { get; private set; }
 
         public event EventHandler<DialogDismissedEventArgs> Dismissed;
         public event EventHandler<DialogInfo> Detected;
@@ -78,20 +87,40 @@ namespace LabVIEWDialogWatchdog
                 }
                 if (state == null)
                 {
-                    state = new DialogState { LastSeenUtc = now, LastInfo = dialog };
-                    _states[dialog.Handle] = state;
-                    DetectedCount++;
-                    _log.Info(Describe("检测到阻塞对话框", dialog));
-                    EventHandler<DialogInfo> detected = Detected;
-                    if (detected != null)
+                    bool targetRecentlyForeground = WasForegroundRecently(dialog.ProcessId, now);
+                    bool userOperating = UserActivityGuard.ShouldSkip(
+                        _settings.userActivityGuard,
+                        UserActivityGuard.GetIdleMilliseconds(),
+                        _settings.userActivityIdleMs,
+                        targetRecentlyForeground);
+                    state = new DialogState
                     {
-                        detected(this, dialog);
+                        LastSeenUtc = now,
+                        LastInfo = dialog,
+                        UserHandled = userOperating
+                    };
+                    _states[dialog.Handle] = state;
+                    if (userOperating)
+                    {
+                        // 对话框出现时用户正在操作 LabVIEW：整个生命周期都不自动点，留给用户。
+                        UserSkippedCount++;
+                        _log.Info("检测到用户正在操作 LabVIEW，跳过自动点击：" + Describe(string.Empty, dialog));
+                    }
+                    else
+                    {
+                        DetectedCount++;
+                        _log.Info(Describe("检测到阻塞对话框", dialog));
+                        EventHandler<DialogInfo> detected = Detected;
+                        if (detected != null)
+                        {
+                            detected(this, dialog);
+                        }
                     }
                 }
 
                 state.LastSeenUtc = now;
                 state.LastInfo = dialog;
-                if (state.Completed)
+                if (state.Completed || state.UserHandled)
                 {
                     continue;
                 }
@@ -202,7 +231,41 @@ namespace LabVIEWDialogWatchdog
                 }
             }
 
+            // 采样放在扫描之后：记录的是“下一轮扫描看到对话框之前”的前台窗口。
+            RecordForeground(now);
             return dialogs;
+        }
+
+        private bool WasForegroundRecently(uint processId, DateTime now)
+        {
+            return HasRecentForeground(_foregroundHistory, processId, now, _settings.userActivityWindowMs);
+        }
+
+        internal static bool HasRecentForeground(
+            IEnumerable<ForegroundSample> history, uint processId, DateTime now, int windowMs)
+        {
+            foreach (ForegroundSample sample in history)
+            {
+                if (sample.Pid == (int)processId &&
+                    (now - sample.At).TotalMilliseconds <= windowMs)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private void RecordForeground(DateTime now)
+        {
+            _foregroundHistory.Add(new ForegroundSample
+            {
+                At = now,
+                Pid = UserActivityGuard.GetForegroundProcessId()
+            });
+
+            int keepMs = Math.Max(8000, _settings.userActivityWindowMs + 2000);
+            DateTime cutoff = now.AddMilliseconds(-keepMs);
+            _foregroundHistory.RemoveAll(sample => sample.At < cutoff);
         }
 
         private static bool SameIdentity(DialogInfo left, DialogInfo right)

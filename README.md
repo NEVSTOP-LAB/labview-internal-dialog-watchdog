@@ -1,4 +1,11 @@
+> [!NOTE]
+> 本工具是 [labview-mcp](https://github.com/NEVSTOP-LAB/labview-mcp) 的配套守护：LabVIEW 被 `Internal Warning` /
+> `Internal Error` 对话框挡住时，MCP 调用会一直等不到返回、后续也连不上 LabVIEW。守护进程自动点掉这类对话框，
+> 让无人值守的自动化任务（批量 VI 操作、CI、长时间测试）能跑完，不需要有人守在机器前。
+
 # LabVIEW Internal Dialog Watchdog
+
+[中文](./README.md) | [English](./README(en).md)
 
 Windows 托盘守护进程：只监控 LabVIEW 的 **Internal Warning / Internal Error** 对话框，出现后等待 N 秒
 （默认 1 秒）自动点击“确定”，让 labview-mcp 等自动化调用继续。**其他对话框一律不管。**

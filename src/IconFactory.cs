@@ -4,7 +4,7 @@ using System.Drawing.Drawing2D;
 using System.Drawing.Text;
 using System.Runtime.InteropServices;
 
-namespace LabVIEWDialogWatchdog
+namespace LabVIEWInternalDialogWatchdog
 {
     internal static class IconFactory
     {

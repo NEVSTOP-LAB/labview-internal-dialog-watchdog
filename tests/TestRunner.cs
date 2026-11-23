@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 
-namespace LabVIEWDialogWatchdog.Tests
+namespace LabVIEWInternalDialogWatchdog.Tests
 {
     /// <summary>不依赖 LabVIEW 的单元测试；参数 1 为可写临时目录。</summary>
     internal static class TestRunner
@@ -11,7 +11,7 @@ namespace LabVIEWDialogWatchdog.Tests
 
         private static int Main(string[] args)
         {
-            string tempDir = args.Length > 0 ? args[0] : Path.Combine(Path.GetTempPath(), "LabVIEWDialogWatchdog.Tests");
+            string tempDir = args.Length > 0 ? args[0] : Path.Combine(Path.GetTempPath(), "LabVIEWInternalDialogWatchdog.Tests");
             Directory.CreateDirectory(tempDir);
 
             var defaults = new WatchdogSettings();

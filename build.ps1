@@ -1,7 +1,7 @@
 #Requires -Version 7
 <#
   用系统自带的 .NET Framework 4.8 csc 编译，不依赖 dotnet SDK。
-  产物：dist\LabVIEWDialogWatchdog.exe；-Tests 时额外编出测试夹具与测试运行器。
+  产物：dist\LabVIEWInternalDialogWatchdog.exe；-Tests 时额外编出测试夹具与测试运行器。
 #>
 param(
     [switch]$Tests,
@@ -39,10 +39,10 @@ $references = @(
 $sources = @(Get-ChildItem -LiteralPath (Join-Path $root 'src') -Filter '*.cs' | ForEach-Object { $_.FullName })
 $manifest = Join-Path $root 'src\app.manifest'
 
-Write-Host '编译 LabVIEWDialogWatchdog.exe ...'
+Write-Host '编译 LabVIEWInternalDialogWatchdog.exe ...'
 & $csc /nologo /target:winexe /platform:anycpu /optimize+ /warn:4 `
     ('/win32manifest:' + $manifest) `
-    ('/out:' + (Join-Path $dist 'LabVIEWDialogWatchdog.exe')) `
+    ('/out:' + (Join-Path $dist 'LabVIEWInternalDialogWatchdog.exe')) `
     @references @sources
 if ($LASTEXITCODE -ne 0) { throw "主程序编译失败（csc 退出码 $LASTEXITCODE）" }
 
@@ -55,8 +55,8 @@ if ($Tests) {
 
     Write-Host '编译测试运行器 ...'
     $testSources = @($sources) + @(Join-Path $root 'tests\TestRunner.cs')
-    & $csc /nologo /target:exe /platform:anycpu /optimize+ /main:LabVIEWDialogWatchdog.Tests.TestRunner `
-        ('/out:' + (Join-Path $testDir 'LabVIEWDialogWatchdog.Tests.exe')) `
+    & $csc /nologo /target:exe /platform:anycpu /optimize+ /main:LabVIEWInternalDialogWatchdog.Tests.TestRunner `
+        ('/out:' + (Join-Path $testDir 'LabVIEWInternalDialogWatchdog.Tests.exe')) `
         @references @testSources
     if ($LASTEXITCODE -ne 0) { throw "测试运行器编译失败（csc 退出码 $LASTEXITCODE）" }
 }

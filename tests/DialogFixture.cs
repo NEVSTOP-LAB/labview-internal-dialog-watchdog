@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using System.Runtime.InteropServices;
 
-namespace LabVIEWDialogWatchdog.Tests
+namespace LabVIEWInternalDialogWatchdog.Tests
 {
     /// <summary>测试夹具：模拟 LabVIEW 的 Internal Warning 对话框（以及一个普通对话框用于反向测试）。</summary>
     internal static class DialogFixture

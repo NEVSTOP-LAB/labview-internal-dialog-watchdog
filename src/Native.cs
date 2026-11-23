@@ -2,7 +2,7 @@ using System;
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace LabVIEWDialogWatchdog
+namespace LabVIEWInternalDialogWatchdog
 {
     /// <summary>Win32 声明集中处。只保留“识别 Internal Warning 对话框并点击确认”用到的 API。</summary>
     internal static class Native

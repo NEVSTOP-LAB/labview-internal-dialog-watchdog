@@ -6,12 +6,12 @@ using System.Reflection;
 using System.Windows.Forms;
 using Microsoft.Win32;
 
-namespace LabVIEWDialogWatchdog
+namespace LabVIEWInternalDialogWatchdog
 {
     internal static class Autostart
     {
         private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
-        private const string ValueName = "LabVIEWDialogWatchdog";
+        private const string ValueName = "LabVIEWInternalDialogWatchdog";
 
         public static bool IsEnabled()
         {

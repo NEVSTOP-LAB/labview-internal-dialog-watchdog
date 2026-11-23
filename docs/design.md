@@ -1,6 +1,6 @@
 # 设计说明
 
-本文记录 LabVIEW Dialog Watchdog 简化后的设计：只处理 LabVIEW 的 Internal Warning/Error 对话框。
+本文记录 LabVIEW Internal Dialog Watchdog 简化后的设计：只处理 LabVIEW 的 Internal Warning/Error 对话框。
 使用与配置见 [README](../README.md)，真实验证见 [verification.md](verification.md)。
 
 ## 1. 目标与非目标
@@ -116,7 +116,7 @@ EnumWindows 找目标进程窗口
 
 ## 4. 配置
 
-- 默认读 exe 同目录 `LabVIEWDialogWatchdog.json`，`--config` 可覆盖。
+- 默认读 exe 同目录 `LabVIEWInternalDialogWatchdog.json`，`--config` 可覆盖。
 - 严格 JSON；加载时容忍整行 `//` 注释；解析失败回退默认并写 `W` 日志。
 - 文件需 UTF-8；`DefaultJson()` 生成的内容可直接读取。
 - 安装脚本不覆盖已有配置；自启只在显式 `-AutoStart` / `-RemoveAutoStart` 时改动。

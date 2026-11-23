@@ -1,4 +1,4 @@
-# LabVIEW Dialog Watchdog
+# LabVIEW Internal Dialog Watchdog
 
 Windows 托盘守护进程：只监控 LabVIEW 的 **Internal Warning / Internal Error** 对话框，出现后等待 N 秒
 （默认 1 秒）自动点击“确定”，让 labview-mcp 等自动化调用继续。**其他对话框一律不管。**
@@ -10,6 +10,16 @@ Windows 托盘守护进程：只监控 LabVIEW 的 **Internal Warning / Internal
 - 只识别窗口类 `#32770` 且文本包含 `Internal Warning` / `Internal Error`（含中文“内部警告/内部错误”）的对话框
 - 对话框出现后先等 `clickDelaySeconds`（默认 1 秒），仍存在才点击；期间被手动处理就不动作
 - 其他对话框（普通错误、保存/覆盖提示、One Button Dialog 等）完全不处理
+
+## 下载（portable）
+
+从 [Releases](https://github.com/NEVSTOP-LAB/labview-internal-dialog-watchdog/releases) 下载
+`LabVIEWInternalDialogWatchdog.exe` 即可，单文件、无安装程序、无需 .NET SDK：
+
+1. 把 exe 放到正常程序目录，例如 `%LOCALAPPDATA%\Programs\LabVIEWInternalDialogWatchdog`；
+2. 直接运行（配置与日志在 exe 同目录生成）；需要开机自启用 `install.ps1 -AutoStart` 或托盘菜单。
+
+当前版本：v0.1.0。
 
 ## 工作原理
 
@@ -31,7 +41,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File build.ps1 -Tests
 安装到正常程序目录（不要放低完整性沙箱目录）：
 
 ```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File install.ps1 -InstallDir "$env:LOCALAPPDATA\Programs\LabVIEWDialogWatchdog" -Start
+pwsh -NoProfile -ExecutionPolicy Bypass -File install.ps1 -InstallDir "$env:LOCALAPPDATA\Programs\LabVIEWInternalDialogWatchdog" -Start
 ```
 
 开机自启：安装时加 `-AutoStart`，或托盘菜单勾选“开机自动启动”。
@@ -43,7 +53,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File install.ps1 -InstallDir "$env:LOCA
 
 ## 配置
 
-默认读取 exe 同目录的 `LabVIEWDialogWatchdog.json`（`--config` 可覆盖）。严格 JSON，加载时容忍整行 `//` 注释；
+默认读取 exe 同目录的 `LabVIEWInternalDialogWatchdog.json`（`--config` 可覆盖）。严格 JSON，加载时容忍整行 `//` 注释；
 文件需 UTF-8。托盘菜单“打开配置文件”会生成默认配置。
 
 | 字段 | 默认值 | 说明 |
@@ -64,7 +74,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File install.ps1 -InstallDir "$env:LOCA
 ## 命令行
 
 ```text
-LabVIEWDialogWatchdog.exe                 # 托盘常驻
+LabVIEWInternalDialogWatchdog.exe                 # 托盘常驻
   --scan [--json]                         # 扫描一次，输出识别到的 Internal Warning
   --watch-seconds <n>                     # 无界面运行 n 秒（测试用）
   --config <path>                         # 指定配置
@@ -106,7 +116,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File tests\run-tests.ps1
 | 扫描为空 | 目标进程名不对；对话框不是 `#32770`，或文本没有 Internal Warning/Error |
 | 普通错误框没被处理 | 预期行为：本工具只处理 Internal Warning/Error |
 | 日志有“点击”但框不消失 | UIPI 拒绝跨级别消息；让守护与 LabVIEW 同权限 |
-| 托盘图标不见 | 检查单实例是否已有进程；看 `logs\LabVIEWDialogWatchdog.log` |
+| 托盘图标不见 | 检查单实例是否已有进程；看 `logs\LabVIEWInternalDialogWatchdog.log` |
 
 ## 已知限制
 

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 
-namespace LabVIEWDialogWatchdog
+namespace LabVIEWInternalDialogWatchdog
 {
     /// <summary>一个小型追加式日志，超过 1 MB 轮转一次（保留 1 个历史文件）。</summary>
     public sealed class Log

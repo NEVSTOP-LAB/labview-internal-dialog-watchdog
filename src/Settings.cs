@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using System.Web.Script.Serialization;
 
-namespace LabVIEWDialogWatchdog
+namespace LabVIEWInternalDialogWatchdog
 {
     /// <summary>
     /// 配置模型：只关心 LabVIEW 的 Internal Warning/Error 对话框。
@@ -47,7 +47,7 @@ namespace LabVIEWDialogWatchdog
 
         public static string DefaultPath
         {
-            get { return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "LabVIEWDialogWatchdog.json"); }
+            get { return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "LabVIEWInternalDialogWatchdog.json"); }
         }
 
         public static WatchdogSettings Load(string path, out string warning)

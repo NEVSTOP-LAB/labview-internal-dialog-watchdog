@@ -1,7 +1,7 @@
 using System;
 using System.Windows.Automation;
 
-namespace LabVIEWDialogWatchdog
+namespace LabVIEWInternalDialogWatchdog
 {
     /// <summary>对已识别的 Internal Warning 对话框执行确认点击。</summary>
     public static class DialogClicker

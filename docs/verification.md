@@ -2,7 +2,7 @@
 
 - 日期：2026-11-12
 - 环境：Windows x64，LabVIEW 2026（26.3d539），labview-mcp 2.6.8
-- 守护进程：`%LOCALAPPDATA%\Programs\LabVIEWDialogWatchdog`（Medium 完整性）
+- 守护进程：`%LOCALAPPDATA%\Programs\LabVIEWInternalDialogWatchdog`（Medium 完整性）
 - 范围：只处理 `Internal Warning` / `Internal Error` 的 `#32770` 对话框
 
 ## 1. 自动化夹具（不需要 LabVIEW）
@@ -87,6 +87,6 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File tests\run-tests.ps1
 - 不修复 LabVIEW 服务内部状态；关闭对话框后若 gRPC 服务仍卡死，需要重启 LabVIEW。
 - 实际点击时间 = `clickDelaySeconds` + 最多一个轮询周期。
 
-原始日志保留在本机 `%LOCALAPPDATA%\Programs\LabVIEWDialogWatchdog\logs\`，不随仓库提交。
+原始日志保留在本机 `%LOCALAPPDATA%\Programs\LabVIEWInternalDialogWatchdog\logs\`，不随仓库提交。
 
 

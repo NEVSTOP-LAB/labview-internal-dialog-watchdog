@@ -6,7 +6,7 @@ using System.Threading;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
 
-namespace LabVIEWDialogWatchdog
+namespace LabVIEWInternalDialogWatchdog
 {
     internal sealed class CliOptions
     {
@@ -137,7 +137,7 @@ namespace LabVIEWDialogWatchdog
         {
             try
             {
-                return new Log(settings.ResolveLogDirectory(), "LabVIEWDialogWatchdog.log", echo);
+                return new Log(settings.ResolveLogDirectory(), "LabVIEWInternalDialogWatchdog.log", echo);
             }
             catch
             {
@@ -145,8 +145,8 @@ namespace LabVIEWDialogWatchdog
             }
             try
             {
-                string fallback = Path.Combine(Path.GetTempPath(), "LabVIEWDialogWatchdog");
-                return new Log(fallback, "LabVIEWDialogWatchdog.log", echo);
+                string fallback = Path.Combine(Path.GetTempPath(), "LabVIEWInternalDialogWatchdog");
+                return new Log(fallback, "LabVIEWInternalDialogWatchdog.log", echo);
             }
             catch
             {
@@ -269,7 +269,7 @@ namespace LabVIEWDialogWatchdog
             bool ownsMutex = false;
             if (!options.NoSingleInstance)
             {
-                mutex = new Mutex(false, @"Local\LabVIEWDialogWatchdog");
+                mutex = new Mutex(false, @"Local\LabVIEWInternalDialogWatchdog");
                 try
                 {
                     ownsMutex = mutex.WaitOne(0, false);
@@ -327,7 +327,7 @@ namespace LabVIEWDialogWatchdog
         {
             WriteConsole(
                 AppTitle + Environment.NewLine +
-                "用法：LabVIEWDialogWatchdog.exe [选项]" + Environment.NewLine +
+                "用法：LabVIEWInternalDialogWatchdog.exe [选项]" + Environment.NewLine +
                 Environment.NewLine +
                 "  （无参数）              以托盘方式运行" + Environment.NewLine +
                 "  --scan [--json]         扫描一次当前对话框并输出，然后退出" + Environment.NewLine +

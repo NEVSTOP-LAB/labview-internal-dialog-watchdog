@@ -20,9 +20,9 @@ if (-not $SkipBuild) {
     if ($LASTEXITCODE -ne 0) { throw 'build.ps1 失败' }
 }
 
-$exe = Join-Path $root 'dist\LabVIEWDialogWatchdog.exe'
+$exe = Join-Path $root 'dist\LabVIEWInternalDialogWatchdog.exe'
 $fixture = Join-Path $root 'dist\tests\LabVIEWDialogFixture.exe'
-$unitTests = Join-Path $root 'dist\tests\LabVIEWDialogWatchdog.Tests.exe'
+$unitTests = Join-Path $root 'dist\tests\LabVIEWInternalDialogWatchdog.Tests.exe'
 
 $script:failures = 0
 $script:total = 0
@@ -132,7 +132,7 @@ try {
     Assert-Verdict '守护进程正常结束' ($watch.ExitCode -eq 0) "exit=$($watch.ExitCode)"
     Assert-Verdict '对话框被自动关闭' (Test-Path -LiteralPath $marker) '未看到关闭标记'
 
-    $logPath = Join-Path $logDir 'LabVIEWDialogWatchdog.log'
+    $logPath = Join-Path $logDir 'LabVIEWInternalDialogWatchdog.log'
     $detectedAt = Get-LogTimestamp -LogPath $logPath -Pattern '检测到 Internal Warning'
     $clickedAt = Get-LogTimestamp -LogPath $logPath -Pattern '第 1 次点击'
     Assert-Verdict '日志记录检测与点击' ($null -ne $detectedAt -and $null -ne $clickedAt) '日志缺少检测/点击'
@@ -186,7 +186,7 @@ try {
     Start-Sleep -Milliseconds 1200
     $null = Invoke-WatchdogCli -Arguments @('--watch-seconds', '2', '--dry-run', '--config', $dryConfig) -Tag 'watch-dry'
     Assert-Verdict 'dry-run 不点击' (-not (Test-Path -LiteralPath $dryMarker)) 'dry-run 点击了对话框'
-    Assert-Verdict 'dry-run 有日志' (((Get-Content -LiteralPath (Join-Path $dryLog 'LabVIEWDialogWatchdog.log') -Raw -Encoding UTF8) -match 'dry-run')) '日志缺少 dry-run'
+    Assert-Verdict 'dry-run 有日志' (((Get-Content -LiteralPath (Join-Path $dryLog 'LabVIEWInternalDialogWatchdog.log') -Raw -Encoding UTF8) -match 'dry-run')) '日志缺少 dry-run'
 }
 finally {
     if (-not $dryProcess.HasExited) {

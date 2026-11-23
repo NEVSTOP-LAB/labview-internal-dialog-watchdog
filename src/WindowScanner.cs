@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-namespace LabVIEWDialogWatchdog
+namespace LabVIEWInternalDialogWatchdog
 {
     /// <summary>一个 LabVIEW Internal Warning/Error 对话框及其确认按钮。</summary>
     public sealed class DialogInfo
